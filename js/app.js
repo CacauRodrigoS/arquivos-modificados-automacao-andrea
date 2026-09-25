@@ -1261,6 +1261,7 @@ window.dropCard = async function (ev) {
     }
 
     if (dropzone && card) {
+        const oldParent = card.parentElement; // guarda a origem (para desfazer se falhar)
         dropzone.appendChild(card);
         updateKanbanCounters();
 
@@ -1272,16 +1273,25 @@ window.dropCard = async function (ev) {
             const formData = new FormData();
             formData.append('task_id', taskId);
             formData.append('status', newStatus);
-            await fetch('api/tasks.php?action=update_status', {
+            const res = await fetch('api/tasks.php?action=update_status', {
                 method: 'POST',
                 body: formData
             });
+            const data = await res.json().catch(() => null);
+            if (!data || !data.success) throw new Error(data && data.error ? data.error : 'Resposta inválida');
+
+            showToast('Status atualizado com sucesso!');
 
             // Atualiza a interface
             if (typeof loadTarefas === 'function') await loadTarefas();
             if (typeof loadKanbanCards === 'function') await loadKanbanCards();
         } catch (e) {
             console.error('Falha ao atualizar status na API', e);
+            // Rollback: devolve o card e conserta os contadores
+            if (oldParent) oldParent.appendChild(card);
+            updateKanbanCounters();
+            if (typeof loadKanbanCards === 'function') await loadKanbanCards();
+            showToast('Falha ao mover o card. Tente novamente.', 'error');
         }
     }
 }

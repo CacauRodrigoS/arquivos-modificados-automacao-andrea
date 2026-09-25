@@ -1,6 +1,6 @@
 # Documentação do Projeto Cobrança Task
 
-**Versão:** 1.5.5  
+**Versão:** 1.5.6  
 **Última atualização:** 25/09/2026
 
 ---
@@ -154,8 +154,8 @@ Arquivo principal da aplicação (2563 linhas). Contém toda a lógica do fronte
 **Kanban:**
 - `loadKanbanCards()` — carrega cards progressivamente
 - `renderKanbanColumn()` / `loadMoreKanbanColumn()` (botao unico "Carregar mais") — injeta cards nas colunas
-- `dragCard()` / `dropCard()` — drag and drop de cards
-- `promptAddColumn()` — adiciona colunas personalizadas
+- `dragCard()` / `dropCard()` — drag and drop de cards (v1.5.6: lê resposta do servidor, toast sucesso/erro, rollback via `oldParent` se falhar)
+- `promptAddColumn()` — adiciona colunas personalizadas (via `promptModal()`)
 
 **Relatórios:**
 - `loadRelatorios()` — carrega dados dos relatórios
@@ -515,6 +515,7 @@ Todos os endpoints da API (exceto `login`) exigem sessão válida. O middleware 
 
 | Versão | Data | Alterações |
 |--------|------|------------|
+| 1.5.6 | 25/09/2026 | Kanban confiável: `dropCard` lê a resposta do servidor (antes ignorava), toast de sucesso/erro e rollback visual (`oldParent` + `updateKanbanCounters` + recarrega) se falhar; `dashboard.html` passa a `app.js?v=14` |
 | 1.5.5 | 25/09/2026 | Fix botão "Ir para Tarefas": `loadView` e `openCreateTaskModal` viviam presas no closure do `DOMContentLoaded` (invisíveis para `onclick` inline) — expostas via `window.loadView`/`window.openCreateTaskModal`; `dashboard.html` passa a `app.js?v=13` (cache-busting) |
 | 1.5.4 | 24/09/2026 | Usabilidade: loading anti-duplo-clique nos botões Entrar e Registrar atendimento (`disabled` + `btn-loading`, destrava no `finally`); `confirmModal()` próprio substituindo os 8 `confirm()` nativos; `promptModal()` substituindo os 2 `prompt()` (nova coluna, nova etiqueta + fix XSS na etiqueta); `emptyStateHtml()` único para Tarefas/Lixeira/Kanban; incentivo à devolutiva (estado vazio convidativo + flag `first_devolutiva` no `add_update` com toast 🎉); `database.sql` ganha tabela `tickets`; `.vscode/` no `.gitignore` |
 | 1.5.3 | 24/09/2026 | Login em produção: `api/config.php` remove aspas dos valores do `.env` (`trim($value), "\"'"`) e espelha em `$_ENV`, default `DB_USER` volta para `bvgarantia_cobranca`; `login.html` sem `required` (validação no backend) + botão `#btnEntrar`, removido link "Acessar o site"; limpeza no `index.html` |
