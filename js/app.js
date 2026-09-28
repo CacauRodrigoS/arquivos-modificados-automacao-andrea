@@ -139,11 +139,22 @@ const views = {
                             <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                             <input type="search" id="searchTarefas" class="search-input" placeholder="Pesquisar registros..." oninput="if(typeof onTarefasSearch === 'function') onTarefasSearch(this.value)">
                         </div>
+                        <select id="orderTarefas" class="form-control form-sm" title="Ordenar lista" onchange="if(typeof onTarefasOrder === 'function') onTarefasOrder(this.value)">
+                            <option value="recent">Mais recentes</option>
+                            <option value="critical">⚠️ Mais críticas</option>
+                        </select>
                         <input type="file" id="importTasksInput" accept=".xls,.xlsx" style="display:none">
                         <button class="btn-secondary" id="btnImportTasks" style="display: ${user && user.role === 'admin' ? 'block' : 'none'}">Importar Planilha</button>
                         <button class="btn-secondary danger-text" id="btnTruncateTasks" style="display: ${user && user.role === 'admin' ? 'block' : 'none'}" onclick="if(typeof truncateAllData === 'function') truncateAllData()">Zerar Dados</button>
                         <button class="btn-primary" id="btnShowCreateTask" style="display: ${user && (user.role === 'admin' || safeGetPermissions().create_task) ? 'block' : 'none'}">Criar tarefas</button>
                     </div>
+                </div>
+
+                <div style="display:flex; gap:8px; margin-bottom:1rem; flex-wrap:wrap;" id="statusChips">
+                    <button class="btn-secondary btn-sm chip-active" data-status="all" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('all')">Todas</button>
+                    <button class="btn-secondary btn-sm" data-status="todo" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('todo')">A Fazer</button>
+                    <button class="btn-secondary btn-sm" data-status="in_progress" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('in_progress')">Atendendo</button>
+                    <button class="btn-secondary btn-sm" data-status="done" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('done')">Finalizado</button>
                 </div>
                 
                 <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden;">
@@ -1026,13 +1037,140 @@ const modalOverlay = document.getElementById('modalOverlay');
 const closeBtns = document.querySelectorAll('.close-modal');
 
 closeBtns.forEach(btn => {
-    btn.addEventListener('click', closeModals);
+    btn.addEventListener('click', async () => {
+        if (btn.closest('#taskDetailsModal') && window.hasTaskDraft()) {
+            const ok = await window.confirmModal(
+                'Fechar sem registrar? O texto digitado será perdido.',
+                'Fechar mesmo assim'
+            );
+            if (!ok) return;
+        }
+        closeModals();
+    });
 });
 
 function closeModals() {
     modalOverlay.classList.add('hidden');
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
 }
+
+// Diz se há texto não salvo no modal de detalhes (só conta com ele aberto).
+window.hasTaskDraft = function () {
+    const modal = document.getElementById('taskDetailsModal');
+    if (!modal || modal.classList.contains('hidden')) return false;
+    const ids = ['taskUpdateText', 'taskObservations', 'newChecklistItem'];
+    if (ids.some((id) => {
+        const el = document.getElementById(id);
+        return el && el.value.trim() !== '';
+    })) return true;
+    const box = document.getElementById('checklistContainer');
+    return !!(box && box.querySelector('.checklist-item'));
+};
+
+// --- Cofre de rascunho (persiste o digitado no navegador, por tarefa+usuário) ---
+window.draftKey = function (taskId) {
+    let uid = 'x';
+    try {
+        const u = JSON.parse(localStorage.getItem('cobranca_user') || '{}');
+        if (u && u.id) uid = u.id;
+    } catch (e) {}
+    return `rascunho_u${uid}_task_${taskId}`;
+};
+
+window.saveTaskDraft = function () {
+    const id = window.currentOpenTaskId;
+    if (!id) return;
+    const get = (elId) => { const el = document.getElementById(elId); return el ? el.value : ''; };
+    const items = [];
+    document.querySelectorAll('#checklistContainer .checklist-item').forEach((label) => {
+        const cb = label.querySelector('input[type="checkbox"]');
+        const span = label.querySelector('span');
+        items.push({ text: span ? span.textContent : '', checked: !!(cb && cb.checked) });
+    });
+    const draft = {
+        update: get('taskUpdateText'),
+        devolutiva: get('taskDevolutiva'),
+        observations: get('taskObservations'),
+        checklist: get('newChecklistItem'),
+        checklistItems: items,
+        savedAt: Date.now()
+    };
+    try {
+        if (!draft.update.trim() && !draft.observations.trim() && !draft.checklist.trim() && items.length === 0) {
+            localStorage.removeItem(window.draftKey(id));
+            return;
+        }
+        localStorage.setItem(window.draftKey(id), JSON.stringify(draft));
+    } catch (e) {}
+};
+
+window.restoreTaskDraft = function (taskId) {
+    // Sempre começa limpo: sem isso, o texto da tarefa anterior vaza para a nova
+    ['taskUpdateText', 'taskDevolutiva', 'taskObservations', 'newChecklistItem'].forEach((elId) => {
+        const el = document.getElementById(elId);
+        if (el) el.value = '';
+    });
+    const checklistBox = document.getElementById('checklistContainer');
+    if (checklistBox) checklistBox.innerHTML = '';
+    const progressBar = document.getElementById('checklistProgress');
+    if (progressBar) progressBar.style.width = '0%';
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(window.draftKey(taskId)) || 'null'); } catch (e) {}
+    if (!draft) return;
+    if (Date.now() - (draft.savedAt || 0) > 7 * 24 * 3600 * 1000) {
+        try { localStorage.removeItem(window.draftKey(taskId)); } catch (e) {}
+        return;
+    }
+    const set = (elId, val) => { const el = document.getElementById(elId); if (el && val) el.value = val; };
+    set('taskUpdateText', draft.update);
+    set('taskDevolutiva', draft.devolutiva);
+    set('taskObservations', draft.observations);
+    set('newChecklistItem', draft.checklist);
+    (draft.checklistItems || []).forEach((item) => {
+        if (item && String(item.text || '').trim()) window.renderChecklistItem(item.text, !!item.checked);
+    });
+    if (typeof updateChecklistProgress === 'function') updateChecklistProgress();
+    if (((draft.update || '').trim() || (draft.observations || '').trim() || (draft.checklistItems || []).length > 0) && typeof showToast === 'function') {
+        showToast('Rascunho restaurado.', 'info');
+    }
+};
+
+window.clearTaskDraft = function (taskId, onlyFields) {
+    const id = taskId || window.currentOpenTaskId;
+    if (!id) return;
+    try {
+        if (!onlyFields) { localStorage.removeItem(window.draftKey(id)); return; }
+        const raw = localStorage.getItem(window.draftKey(id));
+        if (!raw) return;
+        const draft = JSON.parse(raw);
+        onlyFields.forEach((f) => { draft[f] = ''; if (f === 'checklist') draft.checklistItems = []; });
+        const itemsLeft = (draft.checklistItems || []).length > 0;
+        if (!String(draft.update || '').trim() && !String(draft.observations || '').trim() && !String(draft.checklist || '').trim() && !itemsLeft) {
+            localStorage.removeItem(window.draftKey(id));
+        } else {
+            localStorage.setItem(window.draftKey(id), JSON.stringify(draft));
+        }
+    } catch (e) {}
+};
+
+// Liga o salvamento automático (uma vez por campo).
+window.bindDraftAutosave = function () {
+    ['taskUpdateText', 'taskObservations', 'newChecklistItem'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.draftBound) {
+            el.dataset.draftBound = '1';
+            el.addEventListener('input', () => {
+                clearTimeout(window._draftTimer);
+                window._draftTimer = setTimeout(window.saveTaskDraft, 400);
+            });
+        }
+    });
+    const devolEl = document.getElementById('taskDevolutiva');
+    if (devolEl && !devolEl.dataset.draftBound) {
+        devolEl.dataset.draftBound = '1';
+        devolEl.addEventListener('change', window.saveTaskDraft);
+    }
+};
 
 function openCreateTaskModal() {
     modalOverlay.classList.remove('hidden');
@@ -1297,7 +1435,7 @@ window.dropCard = async function (ev) {
 }
 
 window.currentLoadedTasks = [];
-window.tasksPagination = { limit: 50, offset: 0, total: 0, hasMore: true, loading: false, search: '' };
+window.tasksPagination = { limit: 50, offset: 0, total: 0, hasMore: true, loading: false, search: '', order: 'recent', status: 'all' };
 window._tarefasSearchTimer = null;
 window._tarefasAbort = null;
 
@@ -1324,6 +1462,11 @@ window.loadTarefas = async function (reset = true) {
     const tbody = document.getElementById('tarefasList');
     if (!tbody) return;
     if (window.tasksPagination.loading) return;
+    // Mantém o seletor de ordenação e os chips sincronizados com a paginação
+    const orderSel = document.getElementById('orderTarefas');
+    if (orderSel) orderSel.value = window.tasksPagination.order === 'critical' ? 'critical' : 'recent';
+    document.querySelectorAll('#statusChips button').forEach(b =>
+        b.classList.toggle('chip-active', b.dataset.status === window.tasksPagination.status));
     if (reset) {
         window.tasksPagination.offset = 0;
         window.tasksPagination.hasMore = true;
@@ -1337,7 +1480,7 @@ window.loadTarefas = async function (reset = true) {
         const p = window.tasksPagination;
         if (window._tarefasAbort) window._tarefasAbort.abort();
         window._tarefasAbort = new AbortController();
-        const qs = `api/tasks.php?action=list&limit=${p.limit}&offset=${p.offset}&search=${encodeURIComponent(p.search)}&_t=` + new Date().getTime();
+        const qs = `api/tasks.php?action=list&limit=${p.limit}&offset=${p.offset}&search=${encodeURIComponent(p.search)}&order=${p.order === 'critical' ? 'critical' : 'recent'}&status=${['todo', 'in_progress', 'done'].includes(p.status) ? p.status : 'all'}&_t=` + new Date().getTime();
         const res = await fetch(qs, { signal: window._tarefasAbort.signal });
         const data = await res.json();
         if (data && data.success) {
@@ -1398,13 +1541,7 @@ window.loadTarefas = async function (reset = true) {
         let delBtn = isAdmin ? `<button class="btn-secondary danger-text" onclick="deleteServerTask('${parseInt(t.id)}')">Excluir</button>` : '';
 
         let statusInfo = statusMap[t.status] || (t.status ? { label: t.status.charAt(0).toUpperCase() + t.status.slice(1), bg: 'var(--primary)' } : { label: 'A Fazer', bg: '#64748B' });
-        let dueWarning = '';
-        if (t.due_date && t.status !== 'done') {
-            const due = new Date(t.due_date + 'T00:00:00');
-            const diffDays = Math.ceil((due - today) / 86400000);
-            if (diffDays === 1) dueWarning = '<br><span class="label" style="background-color: var(--danger); font-size: 0.7rem; display:inline-block; margin-top:3px;" title="Vence amanhã">\u26A0\ufe0f Vence Amanhã</span>';
-            else if (diffDays < 0) dueWarning = '<br><span class="label" style="background-color: var(--danger); font-size: 0.7rem; display:inline-block; margin-top:3px;" title="Atrasado">\u26A0\ufe0f Atrasado</span>';
-        }
+        let dueWarning = window.dueBadgeHtml(t.due_date, t.status, 'br');
 
         html += `<tr><td>${escapeHtml(t.name)} ${dueWarning}</td><td>${clientText}</td><td>${escapeHtml(t.created_at)}</td><td><span class="label" style="${baseStyle} background: ${statusInfo.bg};">${statusInfo.label}</span></td><td><div class="table-actions"><button class="btn-secondary" onclick="openTaskDetails('${parseInt(t.id)}')">Abrir</button>${delBtn}</div></td></tr>`;
     }
@@ -1420,6 +1557,17 @@ window.onTarefasSearch = function (value) {
         window.tasksPagination.search = (value || '').trim();
         window.loadTarefas(true);
     }, 350);
+};
+
+window.onTarefasOrder = function (value) {
+    window.tasksPagination.order = (value === 'critical') ? 'critical' : 'recent';
+    window.loadTarefas(true);
+};
+
+window.onTarefasStatus = function (value) {
+    const allowed = ['all', 'todo', 'in_progress', 'done'];
+    window.tasksPagination.status = allowed.includes(value) ? value : 'all';
+    window.loadTarefas(true);
 };
 
 window.filterTarefas = function() {
@@ -1596,13 +1744,7 @@ window.loadKanbanCards = async function (forceReload = false) {
         let status = t.status || 'todo';
         let deleteBtn = isAdmin ? `<button class="icon-btn danger-text" style="position: absolute; top: 10px; right: 10px; padding: 2px; font-size: 0.75rem;" onclick="event.stopPropagation(); deleteServerTask('${t.id}')">Excluir</button>` : '';
 
-        let dueWarning = '';
-        if (t.due_date && t.status !== 'done') {
-            const due = new Date(t.due_date + 'T00:00:00');
-            const diffDays = Math.ceil((due - today) / 86400000);
-            if (diffDays === 1) dueWarning = '<div style="margin-top:5px;"><span class="label" style="background-color: var(--danger); font-size: 0.7rem; margin-left: 5px;">\u26A0\ufe0f Vence Amanhã</span></div>';
-            else if (diffDays < 0) dueWarning = '<div style="margin-top:5px;"><span class="label" style="background-color: var(--danger); font-size: 0.7rem; margin-left: 5px;">\u26A0\ufe0f Atrasado</span></div>';
-        }
+        let dueWarning = window.dueBadgeHtml(t.due_date, t.status, 'div');
 
         const card = `<div class="kanban-card" id="card-${escapeHtml(t.id)}" style="position: relative;" draggable="true" ondragstart="dragCard(event)" onclick="openTaskDetails('${escapeHtml(t.id)}')">${deleteBtn}<div class="card-labels"><span class="label" style="background: var(--primary)">${escapeHtml(t.type)}</span></div>${dueWarning}<div class="card-title" style="margin-top: 5px;">${escapeHtml(t.name)}</div><div class="card-client">${escapeHtml(t.client || 'Sem cliente')}</div><div class="card-footer" style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted);"><span>Atrib: ${escapeHtml(userName)}</span></div></div>`;
 
@@ -1666,6 +1808,9 @@ window.openTaskDetails = async function (taskId) {
 
     modalOverlay.classList.remove('hidden');
     document.getElementById('taskDetailsModal').classList.remove('hidden');
+
+    // Restaura rascunho desta tarefa (se houver e válido)
+    window.restoreTaskDraft(taskId);
 
     const dynDetails = document.getElementById('dynamicClientDetails');
     if (dynDetails) dynDetails.innerHTML = '';
@@ -1862,6 +2007,7 @@ window.openTaskDetails = async function (taskId) {
                     t.due_date = due;
                     if (typeof logActivity === 'function') logActivity(`Detalhes da tarefa atualizados (Data/Obs)`);
                     showToast('Alterações salvas com sucesso!');
+                    window.clearTaskDraft(null, ['observations']);
                     await reloadUIAndModal(null);
                 } else {
                     showToast('Erro ao salvar alterações.', 'error');
@@ -1996,6 +2142,10 @@ window.logActivity = function (message) {
 
 // 1. Checklist Progress
 window.updateChecklistProgress = function (checkboxEl = null) {
+    // Gancho: qualquer mudança no checklist atualiza o rascunho da tarefa aberta
+    if (typeof window.saveTaskDraft === 'function') {
+        try { window.saveTaskDraft(); } catch (e) {}
+    }
     const checkboxes = document.querySelectorAll('#checklistContainer input[type="checkbox"]');
     if (checkboxes.length === 0) return;
     const checked = document.querySelectorAll('#checklistContainer input[type="checkbox"]:checked');
@@ -2015,30 +2165,50 @@ if (btnAddChecklist) {
         const input = document.getElementById('newChecklistItem');
         const text = input.value.trim();
         if (text) {
-            const container = document.getElementById('checklistContainer');
-            const label = document.createElement('label');
-            label.className = 'checklist-item';
-            label.style.display = 'flex';
-            label.style.alignItems = 'center';
-            label.style.justifyContent = 'space-between';
-            label.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <input type="checkbox" onchange="updateChecklistProgress(this)"> 
-                        <span>${text}</span>
-                    </div>
-                    <button type="button" class="icon-btn text-danger" onclick="this.closest('.checklist-item').remove(); updateChecklistProgress(); window.logActivity('Excluiu um item do checklist: ${text}');" title="Excluir item" style="padding: 2px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
-                        </svg>
-                    </button>
-                `;
-            container.appendChild(label);
+            window.renderChecklistItem(text, false);
             input.value = '';
             updateChecklistProgress();
             window.logActivity(`Adicionou um novo item ao checklist: '${text}'`);
         }
     };
 }
+
+// Constrói um item do checklist via DOM (sem innerHTML: sem risco de XSS/aspas).
+window.renderChecklistItem = function (text, checked) {
+    const container = document.getElementById('checklistContainer');
+    if (!container) return;
+    const label = document.createElement('label');
+    label.className = 'checklist-item';
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    label.style.justifyContent = 'space-between';
+    const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.alignItems = 'center';
+    left.style.gap = '8px';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!checked;
+    cb.setAttribute('onchange', 'updateChecklistProgress(this)');
+    const span = document.createElement('span');
+    span.textContent = text;
+    left.appendChild(cb);
+    left.appendChild(span);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'icon-btn text-danger';
+    btn.title = 'Excluir item';
+    btn.style.padding = '2px';
+    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>';
+    btn.onclick = function () {
+        label.remove();
+        updateChecklistProgress();
+        window.logActivity('Excluiu um item do checklist: ' + text);
+    };
+    label.appendChild(left);
+    label.appendChild(btn);
+    container.appendChild(label);
+};
 
 // Update existing checkboxes to trigger log
 const existingCheckboxes = document.querySelectorAll('#checklistContainer input[type="checkbox"]');
@@ -2069,6 +2239,9 @@ if (btnAddLabel) {
         }
     };
 }
+
+// Liga o salvamento automático de rascunho (campos estáticos do modal).
+window.bindDraftAutosave();
 
 // 3. Registrar Atendimento
 const btnSaveUpdate = document.getElementById('btnSaveUpdate');
@@ -2110,6 +2283,7 @@ if (btnSaveUpdate) {
         updatesList.prepend(newUpdate);
         textInput.value = '';
         if (devolSelect) devolSelect.value = '';
+        window.clearTaskDraft(null, ['update', 'devolutiva']);
         window.logActivity(`Registrou um novo atendimento (nota)`);
 
         // Try to hit API if real ID is available (Mocked ID 1 here for demo)
@@ -2220,6 +2394,33 @@ window.openRankingModal = function (title, items, color) {
     `;
     modal.appendChild(modalDiv);
     modal.classList.remove('hidden');
+};
+
+// Selo de vencimento unificado (tabela + kanban).
+// Escala: atrasada há Xd > vence hoje > vence amanhã > vence em Xd (até 7 dias). '' = sem aviso.
+window.dueBadgeHtml = function (due_date, status, wrap) {
+    if (!due_date || status === 'done') return '';
+    const due = new Date(due_date + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due - today) / 86400000);
+    let label = '';
+    let color = 'var(--danger)';
+    if (diffDays < 0) {
+        const late = Math.abs(diffDays);
+        label = late === 1 ? '⚠️ Atrasada há 1 dia' : `⚠️ Atrasada há ${late} dias`;
+    } else if (diffDays === 0) {
+        label = '⏰ Vence hoje';
+    } else if (diffDays === 1) {
+        label = '⚠️ Vence amanhã';
+    } else if (diffDays <= 7) {
+        label = `📅 Vence em ${diffDays} dias`;
+        color = 'var(--warning, #F59E0B)';
+    } else {
+        return '';
+    }
+    const badge = `<span class="label" style="background-color: ${color}; font-size: 0.7rem;" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    return wrap === 'br' ? `<br>${badge}` : `<div style="margin-top:5px;">${badge}</div>`;
 };
 
 // Fábrica de estados vazios (molde único para Tarefas/Lixeira/Kanban).

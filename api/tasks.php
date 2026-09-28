@@ -19,12 +19,18 @@ if ($action === 'list') {
     if ($limit > 200) $limit = 200;
     if ($offset < 0) $offset = 0;
     $search = trim($_GET['search'] ?? '');
-    $baseWhere = "WHERE deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00'";
+    $baseWhere = "WHERE (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')";
     $params = [];
     if ($search !== '') {
         $baseWhere .= " AND (property_name LIKE ? OR client_name LIKE ? OR client_code LIKE ?)";
         $like = '%' . $search . '%';
         $params = [$like, $like, $like];
+    }
+    // Filtro por status (whitelist; 'all' ou inválido = sem filtro)
+    $status = $_GET['status'] ?? 'all';
+    if (in_array($status, ['todo', 'in_progress', 'done'], true)) {
+        $baseWhere .= " AND status = ?";
+        $params[] = $status;
     }
     // S1: não-admin só vê o que é seu (dono ou compartilhado), igual ao reports.php/list_trash
     if (getCurrentUserRole() !== 'admin') {
@@ -36,8 +42,15 @@ if ($action === 'list') {
     $stmtCount = $pdo->prepare("SELECT COUNT(*) FROM tasks $baseWhere");
     $stmtCount->execute($params);
     $total = (int)$stmtCount->fetchColumn();
+    // Ordenação: 'recent' (padrão) ou 'critical' (vencidas primeiro)
+    $order = $_GET['order'] ?? 'recent';
+    if ($order === 'critical') {
+        $orderSql = "CASE WHEN status = 'done' THEN 1 ELSE 0 END, CASE WHEN due_date IS NULL OR due_date = '0000-00-00' THEN 1 ELSE 0 END, due_date ASC";
+    } else {
+        $orderSql = "created_at DESC";
+    }
     // Página atual
-    $stmt = $pdo->prepare("SELECT * FROM tasks $baseWhere ORDER BY created_at DESC LIMIT $limit OFFSET $offset");
+    $stmt = $pdo->prepare("SELECT * FROM tasks $baseWhere ORDER BY $orderSql LIMIT $limit OFFSET $offset");
     $stmt->execute($params);
     $tasks = $stmt->fetchAll();
 

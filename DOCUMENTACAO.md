@@ -1,7 +1,7 @@
 # Documentação do Projeto Cobrança Task
 
-**Versão:** 1.5.6  
-**Última atualização:** 25/09/2026
+**Versão:** 1.5.7  
+**Última atualização:** 28/09/2026
 
 ---
 
@@ -246,7 +246,7 @@ API de tarefas (285 linhas):
 
 | Ação | Método | Acesso | Descrição |
 |------|--------|--------|-----------|
-| `?action=list` | GET | Logado | Lista tarefas com paginação (`limit`, `offset` ou `page`, `search`; retorna `total`/`hasMore`). **v1.5.0:** não-admin só recebe `assigned_to=self` ou compartilhadas (`task_shares`) |
+| `?action=list` | GET | Logado | Lista tarefas com paginação (`limit`, `offset` ou `page`, `search`; retorna `total`/`hasMore`). **v1.5.0:** não-admin só recebe `assigned_to=self` ou compartilhadas (`task_shares`). **v1.5.7:** `?status=` (todo/in_progress/done, resto = sem filtro), `?order=critical` (vencidas primeiro) e `WHERE` com parênteses (sem eles o `OR` anulava os filtros) |
 | `?action=get` | GET | Logado | Busca uma tarefa por ID |
 | `?action=create` | POST | Logado | Cria tarefas em lote |
 | `?action=update_status` | POST | Logado | Atualiza status (todo/in_progress/done) |
@@ -515,6 +515,7 @@ Todos os endpoints da API (exceto `login`) exigem sessão válida. O middleware 
 
 | Versão | Data | Alterações |
 |--------|------|------------|
+| 1.5.7 | 28/09/2026 | Filtro por status nas tarefas: chips Todas/A Fazer/Atendendo/Finalizado (`?status=` com whitelist no `list`, estado na paginação, CSS `.chip-active`); fix crítico no `WHERE` (`tasks.php` + `reports.php`): parênteses em `(deleted_at IS NULL OR ...)` — sem eles o `OR` anulava todos os `AND` (status, busca e isolamento não-admin ignorados); selo de vencimento unificado `dueBadgeHtml()` (idade do atraso, vence hoje, aviso 7 dias) aplicado em tabela e Kanban; `dashboard.html` passa a `app.js?v=20` |
 | 1.5.6 | 25/09/2026 | Kanban confiável: `dropCard` lê a resposta do servidor (antes ignorava), toast de sucesso/erro e rollback visual (`oldParent` + `updateKanbanCounters` + recarrega) se falhar; `dashboard.html` passa a `app.js?v=14` |
 | 1.5.5 | 25/09/2026 | Fix botão "Ir para Tarefas": `loadView` e `openCreateTaskModal` viviam presas no closure do `DOMContentLoaded` (invisíveis para `onclick` inline) — expostas via `window.loadView`/`window.openCreateTaskModal`; `dashboard.html` passa a `app.js?v=13` (cache-busting) |
 | 1.5.4 | 24/09/2026 | Usabilidade: loading anti-duplo-clique nos botões Entrar e Registrar atendimento (`disabled` + `btn-loading`, destrava no `finally`); `confirmModal()` próprio substituindo os 8 `confirm()` nativos; `promptModal()` substituindo os 2 `prompt()` (nova coluna, nova etiqueta + fix XSS na etiqueta); `emptyStateHtml()` único para Tarefas/Lixeira/Kanban; incentivo à devolutiva (estado vazio convidativo + flag `first_devolutiva` no `add_update` com toast 🎉); `database.sql` ganha tabela `tickets`; `.vscode/` no `.gitignore` |

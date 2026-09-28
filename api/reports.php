@@ -6,7 +6,7 @@ $role = getCurrentUserRole();
 
 try {
     $pdo = getConnection();
-    $where = "WHERE t.deleted_at IS NULL OR t.deleted_at = '0000-00-00 00:00:00'";
+    $where = "WHERE (t.deleted_at IS NULL OR t.deleted_at = '0000-00-00 00:00:00')";
     $params = [];
     
     if ($role !== 'admin') {

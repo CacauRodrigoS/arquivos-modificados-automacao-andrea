@@ -307,6 +307,13 @@ a:hover {
     color: var(--accent);
 }
 
+/* Chip de filtro ativo (ex.: status das tarefas) */
+.btn-secondary.chip-active {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
 .btn-block {
     width: 100%;
 }
