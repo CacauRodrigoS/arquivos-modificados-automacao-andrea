@@ -1,7 +1,7 @@
 # Documentação do Projeto Cobrança Task
 
-**Versão:** 1.5.7  
-**Última atualização:** 28/09/2026
+**Versão:** 1.5.8  
+**Última atualização:** 29/09/2026
 
 ---
 
@@ -515,6 +515,7 @@ Todos os endpoints da API (exceto `login`) exigem sessão válida. O middleware 
 
 | Versão | Data | Alterações |
 |--------|------|------------|
+| 1.5.8 | 29/09/2026 | Resumo do dia: `my_summary` no `reports.php` (abertas, vencidas, vencem em 7d, promessas — escopo por papel) + faixa clicável no topo de Tarefas; rascunho real de atendimento/observações/checklist por tarefa+usuário (debounce, validade 7 dias, limpeza parcial ao salvar, itens do checklist sem vazar); proteção anti-perda ao fechar modal com texto; ordenação `?order=critical`; `app.js?v=21` |
 | 1.5.7 | 28/09/2026 | Filtro por status nas tarefas: chips Todas/A Fazer/Atendendo/Finalizado (`?status=` com whitelist no `list`, estado na paginação, CSS `.chip-active`); fix crítico no `WHERE` (`tasks.php` + `reports.php`): parênteses em `(deleted_at IS NULL OR ...)` — sem eles o `OR` anulava todos os `AND` (status, busca e isolamento não-admin ignorados); selo de vencimento unificado `dueBadgeHtml()` (idade do atraso, vence hoje, aviso 7 dias) aplicado em tabela e Kanban; `dashboard.html` passa a `app.js?v=20` |
 | 1.5.6 | 25/09/2026 | Kanban confiável: `dropCard` lê a resposta do servidor (antes ignorava), toast de sucesso/erro e rollback visual (`oldParent` + `updateKanbanCounters` + recarrega) se falhar; `dashboard.html` passa a `app.js?v=14` |
 | 1.5.5 | 25/09/2026 | Fix botão "Ir para Tarefas": `loadView` e `openCreateTaskModal` viviam presas no closure do `DOMContentLoaded` (invisíveis para `onclick` inline) — expostas via `window.loadView`/`window.openCreateTaskModal`; `dashboard.html` passa a `app.js?v=13` (cache-busting) |

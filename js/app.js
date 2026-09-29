@@ -150,6 +150,8 @@ const views = {
                     </div>
                 </div>
 
+                <div id="mySummary" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:1rem;"></div>
+
                 <div style="display:flex; gap:8px; margin-bottom:1rem; flex-wrap:wrap;" id="statusChips">
                     <button class="btn-secondary btn-sm chip-active" data-status="all" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('all')">Todas</button>
                     <button class="btn-secondary btn-sm" data-status="todo" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('todo')">A Fazer</button>
@@ -478,7 +480,7 @@ function loadView(viewName) {
 
     // Setup view specific events
     if (viewName === 'tarefas') {
-        if (targetView.isFirstLoad) loadTarefas();
+        if (targetView.isFirstLoad) { loadTarefas(); loadMySummary(); }
     } else if (viewName === 'kanban') {
         if (targetView.isFirstLoad) loadKanbanCards();
     } else if (viewName === 'lixeira') {
@@ -1456,6 +1458,35 @@ window.loadMoreTarefas = async function () {
     if (!window.tasksPagination.hasMore || window.tasksPagination.loading) return;
     await window.loadTarefas(false);
     window._kanbanDirty = true;
+};
+
+// Faixa "resumo do dia" (contagens pessoais; admin vê a equipe).
+window.loadMySummary = async function () {
+    const box = document.getElementById('mySummary');
+    if (!box) return;
+    try {
+        const res = await fetch('api/reports.php');
+        const data = await res.json();
+        const s = (data && data.success && data.data.my_summary) || null;
+        if (!s) return;
+        const total = (s.abertas || 0) + (s.vencidas || 0) + (s.vencem_7d || 0) + (s.promessas || 0);
+        if (total === 0 && (s.abertas || 0) === 0) {
+            box.innerHTML = `<div class="card" style="padding:14px; text-align:center; grid-column:1/-1;">✨ Nada pendente por aqui. Bom trabalho!</div>`;
+            return;
+        }
+        const card = (icon, n, label, action) => `
+            <div class="card" style="padding:12px 14px; display:flex; align-items:center; gap:10px; ${action ? 'cursor:pointer;' : ''}" ${action ? `onclick="${action}"` : ''}>
+                <span style="font-size:1.4rem;">${icon}</span>
+                <span><strong style="font-size:1.2rem;">${n}</strong><br><small class="text-muted">${label}</small></span>
+            </div>`;
+        box.innerHTML =
+            card('📂', s.abertas || 0, 'abertas', '') +
+            card('🔴', s.vencidas || 0, 'vencidas', "onTarefasOrder('critical')") +
+            card('📅', s.vencem_7d || 0, 'vencem em 7 dias', '') +
+            card('🤝', s.promessas || 0, 'promessas registradas', "loadView('relatorios')");
+    } catch (e) {
+        console.error('Falha ao carregar resumo', e);
+    }
 };
 
 window.loadTarefas = async function (reset = true) {

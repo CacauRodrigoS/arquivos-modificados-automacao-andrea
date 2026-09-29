@@ -71,10 +71,30 @@ try {
     }
     unset($row);
 
+    // 5. Resumo do dia (contagens rápidas; escopo segue o papel: admin = equipe, demais = próprio)
+    $stmtSum = $pdo->prepare("
+        SELECT
+            SUM(t.status <> 'done') AS abertas,
+            SUM(t.status <> 'done' AND t.due_date IS NOT NULL AND t.due_date <> '0000-00-00' AND t.due_date < CURDATE()) AS vencidas,
+            SUM(t.status <> 'done' AND t.due_date >= CURDATE() AND t.due_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)) AS vencem_7d
+        FROM tasks t $where
+    ");
+    $stmtSum->execute($params);
+    $summary = $stmtSum->fetch() ?: ['abertas' => 0, 'vencidas' => 0, 'vencem_7d' => 0];
+    $stmtProm = $pdo->prepare("
+        SELECT COUNT(*) FROM task_updates tu
+        INNER JOIN tasks t ON t.id = tu.task_id
+        $where AND tu.devolutiva = 'Promessa de pagamento'
+    ");
+    $stmtProm->execute($params);
+    $summary['promessas'] = (int)$stmtProm->fetchColumn();
+    $summary = array_map(fn($v) => (int)$v, $summary);
+
     jsonResponse([
         'success' => true,
         'data' => [
             'total_atendimentos' => $totalAtendimentos,
+            'my_summary' => $summary,
             'ranking_atendentes' => array_slice($rankingAtendentes, 0, 5),
             'ranking_atendentes_all' => $rankingAtendentes,
             'ranking_imoveis' => array_slice($rankingImoveisAll, 0, 5),
