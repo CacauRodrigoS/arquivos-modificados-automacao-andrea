@@ -90,6 +90,7 @@
                     <div class="nav-submenu hidden" id="adminSubmenu">
                         <a href="#permissoes" class="nav-item sub-item" data-view="permissoes">Permissões de
                             Usuários</a>
+                        <a href="#chamados" class="nav-item sub-item" data-view="chamados">Chamados</a>
                         <a href="#lixeira" class="nav-item sub-item danger-text" data-view="lixeira"
                             style="color: #ef4444;">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
@@ -179,6 +180,14 @@
                     </svg>
                 </button>
                 <h2 id="currentViewTitle">Tarefas</h2>
+                <div style="margin-left:auto; position:relative;">
+                    <button id="bellBtn" class="icon-btn" title="Notificações" style="display:none; position:relative;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                        <span id="bellCount" class="label" style="display:none; position:absolute; top:-4px; right:-4px; background:var(--danger); font-size:0.65rem; padding:0 5px;">0</span>
+                    </button>
+                    <div id="bellDropdown" class="hidden" style="position:absolute; right:0; top:40px; width:320px; max-height:380px; overflow-y:auto; z-index:1000; padding:0; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:0 8px 24px rgba(0,0,0,0.18);">
+                    </div>
+                </div>
             </header>
 
             <!-- Views Container -->
@@ -414,7 +423,7 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script defer src="js/theme.js?v=7"></script>
     <script defer src="js/auth.js?v=7"></script>
-    <script defer src="js/app.js?v=21"></script>
+    <script defer src="js/app.js?v=27"></script>
 </body>
 
 </html>

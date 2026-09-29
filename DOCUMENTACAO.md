@@ -1,6 +1,6 @@
 # Documentação do Projeto Cobrança Task
 
-**Versão:** 1.5.8  
+**Versão:** 1.5.9  
 **Última atualização:** 29/09/2026
 
 ---
@@ -305,13 +305,16 @@ API de configurações (31 linhas):
 ---
 
 #### `api/tickets.php`
-API de chamados (58 linhas):
+API de chamados:
 
 | Ação | Método | Acesso | Descrição |
 |------|--------|--------|-----------|
 | `?action=create` | POST | Logado | Abre novo chamado (dados do usuário vêm da sessão) |
-| `?action=list` | GET | **Admin** | Lista chamados |
+| `?action=list` | GET | **Admin** | Lista chamados (com `read_at`; não lidos em negrito) |
 | `?action=update_status` | POST | **Admin** | Atualiza status (aberto/em_andamento/resolvido) |
+| `?action=count_unread` | GET | **Admin** | Conta não lidos (`read_at IS NULL`) — sondagem do sino |
+| `?action=unread_list` | GET | **Admin** | Top 10 não lidos (pilha do sino) |
+| `?action=mark_read` | POST | **Admin** | Marca como lido (com `id` = um chamado, sem = todos) |
 
 > **Segurança:** Os dados do usuário (id, nome, e-mail) são obtidos da sessão no servidor, não do cliente.
 
@@ -515,6 +518,7 @@ Todos os endpoints da API (exceto `login`) exigem sessão válida. O middleware 
 
 | Versão | Data | Alterações |
 |--------|------|------------|
+| 1.5.9 | 29/09/2026 | Notificações de chamados: sino 🔔 no topo (só admin) com pilha (top 10 não lidos, "Ver"/"Marcar todas"/"Ver todos", sem toast), página Chamados própria no submenu, lido por chamado (`mark_read` aceita `id`, `unread_list`), coluna `read_at` (`migrate_tickets_read.php`); busca do Kanban no servidor (teto 200, `renderKanbanBoard` reaproveitado, banner + restaura ao limpar, debounce + contador); resumo clicável explícito (dicas, tooltip, hover); fundo próprio no dropdown do sino; `app.js?v=27` |
 | 1.5.8 | 29/09/2026 | Resumo do dia: `my_summary` no `reports.php` (abertas, vencidas, vencem em 7d, promessas — escopo por papel) + faixa clicável no topo de Tarefas; rascunho real de atendimento/observações/checklist por tarefa+usuário (debounce, validade 7 dias, limpeza parcial ao salvar, itens do checklist sem vazar); proteção anti-perda ao fechar modal com texto; ordenação `?order=critical`; `app.js?v=21` |
 | 1.5.7 | 28/09/2026 | Filtro por status nas tarefas: chips Todas/A Fazer/Atendendo/Finalizado (`?status=` com whitelist no `list`, estado na paginação, CSS `.chip-active`); fix crítico no `WHERE` (`tasks.php` + `reports.php`): parênteses em `(deleted_at IS NULL OR ...)` — sem eles o `OR` anulava todos os `AND` (status, busca e isolamento não-admin ignorados); selo de vencimento unificado `dueBadgeHtml()` (idade do atraso, vence hoje, aviso 7 dias) aplicado em tabela e Kanban; `dashboard.html` passa a `app.js?v=20` |
 | 1.5.6 | 25/09/2026 | Kanban confiável: `dropCard` lê a resposta do servidor (antes ignorava), toast de sucesso/erro e rollback visual (`oldParent` + `updateKanbanCounters` + recarrega) se falhar; `dashboard.html` passa a `app.js?v=14` |

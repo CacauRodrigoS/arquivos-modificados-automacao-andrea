@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS `tickets` (
   `message` TEXT NOT NULL,
   `status` ENUM('aberto','em_andamento','resolvido') DEFAULT 'aberto',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `read_at` TIMESTAMP NULL DEFAULT NULL,
   FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 );
 

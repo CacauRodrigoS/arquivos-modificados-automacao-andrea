@@ -52,6 +52,35 @@ if ($action === 'list') {
     jsonResponse(['success' => true, 'tickets' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
 }
 
+if ($action === 'count_unread') {
+    requireAdmin();
+    $pdo = getConnection();
+    $n = $pdo->query("SELECT COUNT(*) FROM tickets WHERE read_at IS NULL")->fetchColumn();
+    jsonResponse(['success' => true, 'unread' => (int)$n]);
+}
+
+if ($action === 'mark_read') {
+    requireAdmin();
+    requireCsrf();
+    $pdo = getConnection();
+    $body = json_decode(file_get_contents("php://input"), true) ?? [];
+    $id = (int)($_POST['id'] ?? $body['id'] ?? 0);
+    if ($id > 0) {
+        $stmt = $pdo->prepare("UPDATE tickets SET read_at = NOW() WHERE id = ? AND read_at IS NULL");
+        $stmt->execute([$id]);
+    } else {
+        $pdo->exec("UPDATE tickets SET read_at = NOW() WHERE read_at IS NULL");
+    }
+    jsonResponse(['success' => true]);
+}
+
+if ($action === 'unread_list') {
+    requireAdmin();
+    $pdo = getConnection();
+    $stmt = $pdo->query("SELECT id, user_name, subject, created_at FROM tickets WHERE read_at IS NULL ORDER BY created_at DESC LIMIT 10");
+    jsonResponse(['success' => true, 'tickets' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+}
+
 if ($action === 'update_status') {
     requireAdmin();
     requireCsrf();

@@ -47,6 +47,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (adminSubmenu) adminSubmenu.classList.remove('hidden');
                 const navUsuarios = document.getElementById('navUsuarios');
                 if (navUsuarios) navUsuarios.style.display = 'flex';
+                // Sino + sondagem de chamados novos
+                const bellBtn = document.getElementById('bellBtn');
+                if (bellBtn) {
+                    bellBtn.style.display = '';
+                    bellBtn.onclick = (e) => { e.stopPropagation(); window.toggleBell(); };
+                    document.addEventListener('click', (e) => {
+                        const dd = document.getElementById('bellDropdown');
+                        if (dd && !dd.classList.contains('hidden') && !e.target.closest('#bellDropdown') && !e.target.closest('#bellBtn')) {
+                            dd.classList.add('hidden');
+                        }
+                    });
+                }
+                window.pollTickets();
+                setInterval(window.pollTickets, 2 * 60 * 1000);
             } else {
                 applySidebarPermissions();
             }
@@ -96,6 +110,101 @@ fetch('api/settings.php?action=get')
         }
     })
     .catch(e => console.error('Erro ao carregar permissões', e));
+
+// --- Sondagem de chamados novos (só admin): selo no menu + sino (sem toast) ---
+window.pollTickets = async function () {
+    try {
+        const res = await fetch('api/tickets.php?action=count_unread');
+        const data = await res.json();
+        const n = (data && data.success) ? (data.unread || 0) : 0;
+        window._lastUnread = n;
+        const bellCount = document.getElementById('bellCount');
+        if (bellCount) {
+            bellCount.textContent = n > 99 ? '99+' : String(n);
+            bellCount.style.display = n > 0 ? '' : 'none';
+        }
+        let badge = document.getElementById('ticketsBadge');
+        const navConfig = document.querySelector('a.nav-item[data-view="configuracoes"]');
+        if (n > 0 && navConfig) {
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.id = 'ticketsBadge';
+                badge.className = 'label';
+                badge.style.cssText = 'background:var(--danger); margin-left:6px;';
+                navConfig.appendChild(badge);
+            }
+            badge.textContent = n;
+            badge.style.display = '';
+        } else if (badge) {
+            badge.style.display = 'none';
+        }
+        // Se a pilha estiver aberta, atualiza o conteúdo junto
+        const dd = document.getElementById('bellDropdown');
+        if (dd && !dd.classList.contains('hidden') && typeof window.loadBellStack === 'function') {
+            await window.loadBellStack();
+        }
+    } catch (e) {
+        console.error('Falha na sondagem de chamados', e);
+    }
+};
+
+// --- Sino de notificações (pilha de chamados não lidos, só admin) ---
+window.toggleBell = async function (force) {
+    const dd = document.getElementById('bellDropdown');
+    if (!dd) return;
+    const show = typeof force === 'boolean' ? force : dd.classList.contains('hidden');
+    if (!show) { dd.classList.add('hidden'); return; }
+    dd.classList.remove('hidden');
+    await window.loadBellStack();
+};
+
+window.loadBellStack = async function () {
+    const dd = document.getElementById('bellDropdown');
+    if (!dd) return;
+    dd.innerHTML = '<p class="text-muted" style="padding:1rem; text-align:center;">Carregando...</p>';
+    try {
+        const res = await fetch('api/tickets.php?action=unread_list');
+        const data = await res.json();
+        const items = (data && data.success && data.tickets) || [];
+        if (items.length === 0) {
+            dd.innerHTML = '<p class="text-muted" style="padding:1rem; text-align:center;">Nenhuma notificação. 🎉</p>';
+            return;
+        }
+        let html = '';
+        items.forEach((t) => {
+            const date = new Date(t.created_at).toLocaleDateString('pt-BR');
+            html += `<div style="padding:0.7rem 1rem; border-bottom:1px solid var(--border);">
+                <div style="font-size:0.9rem;"><strong>${escapeHtml(t.subject)}</strong></div>
+                <div class="text-muted" style="font-size:0.75rem;">${escapeHtml(t.user_name)} · ${date}</div>
+                <button class="btn-secondary btn-sm" style="margin-top:6px;" onclick="window.openTicketFromBell(${parseInt(t.id)})">Ver</button>
+            </div>`;
+        });
+        html += `<div style="display:flex; gap:8px; padding:0.7rem 1rem;">
+            <button class="btn-secondary btn-sm" style="flex:1;" onclick="window.markAllTicketsRead()">Marcar todas como lidas</button>
+            <button class="btn-secondary btn-sm" style="flex:1;" onclick="window.toggleBell(false); loadView('chamados')">Ver todos</button>
+        </div>`;
+        dd.innerHTML = html;
+    } catch (e) {
+        dd.innerHTML = '<p style="color:var(--danger); padding:1rem; text-align:center;">Falha ao carregar.</p>';
+    }
+};
+
+window.markAllTicketsRead = async function () {
+    try {
+        await fetch('api/tickets.php?action=mark_read', { method: 'POST' });
+        if (typeof window.pollTickets === 'function') await window.pollTickets();
+        await window.loadBellStack();
+        if (typeof loadTickets === 'function') loadTickets();
+    } catch (e) {}
+};
+
+// Abre um chamado vindo do sino (garante a view + dados antes do modal).
+window.openTicketFromBell = async function (id) {
+    window.toggleBell(false);
+    if (typeof loadView === 'function') loadView('chamados');
+    if (typeof loadTickets === 'function') await loadTickets();
+    if (typeof window.viewTicket === 'function') window.viewTicket(id);
+};
 
 // --- Safe User Permissions ---
 function safeGetPermissions() {
@@ -191,11 +300,14 @@ const views = {
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <div class="search-container">
                             <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                            <input type="search" id="searchKanban" class="search-input" placeholder="Pesquisar registros..." onkeyup="if(typeof filterKanban === 'function') filterKanban()">
+                            <input type="search" id="searchKanban" class="search-input" placeholder="Pesquisar registros..." oninput="if(typeof onKanbanSearch === 'function') onKanbanSearch(this.value)">
                         </div>
+                        <span id="kanbanSearchCount" class="text-muted" style="font-size:0.8rem; white-space:nowrap;"></span>
                         <button class="btn-primary btn-sm" onclick="promptAddColumn()">+ Adicionar Coluna</button>
                     </div>
                 </div>
+                <div id="kanbanEmptySearch" class="hidden" style="text-align:center; padding:1rem; color:var(--text-muted);"></div>
+                <div id="kanbanSearchBanner" class="hidden" style="margin-bottom:1rem; padding:0.7rem 1rem; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:0.85rem;"></div>
                 <div class="kanban-board" id="kanbanBoard">
                     <!-- Columns will be injected dynamically here by loadKanbanCards() / loadColumns() -->
                 </div>
@@ -232,6 +344,21 @@ const views = {
                             <tr><td colspan="4" style="text-align:center">Lixeira vazia ou carregando...</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        `,
+    chamados: `
+            <div class="view-section active" id="view-chamados">
+                <div class="flex-between" style="margin-bottom: 2rem;">
+                    <div>
+                        <h3>Chamados</h3>
+                        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">Solicitações abertas pelos usuários. Abrir um chamado o marca como lido.</p>
+                    </div>
+                </div>
+                <div style="background: var(--bg-surface); padding: 2rem; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <div id="ticketsContainer">
+                        <p style="color: var(--text-muted);">Carregando chamados...</p>
+                    </div>
                 </div>
             </div>
         `,
@@ -284,13 +411,6 @@ const views = {
                 <h4 style="margin-bottom: 1.5rem; color: var(--primary);">Submenu Administrativo</h4>
                 <p style="margin-bottom: 1rem; color: var(--text-muted);">Definir e ajustar permissões de acesso dos usuários no sistema.</p>
                 <button class="btn-secondary" onclick="document.querySelector('[data-view=permissoes]').click()">Gerenciar Permissões</button>
-            </div>
-
-            <div style="background: var(--bg-surface); padding: 2rem; border-radius: var(--radius-md); border: 1px solid var(--border); margin-top: 2rem;">
-                <h4 style="margin-bottom: 1.5rem; color: var(--primary);">Chamados Abertos</h4>
-                <div id="ticketsContainer">
-                    <p style="color: var(--text-muted);">Carregando chamados...</p>
-                </div>
             </div>
             ` : ''}
         </div>`,
@@ -478,6 +598,11 @@ function loadView(viewName) {
     });
     targetView.style.display = 'block';
 
+    // Sondagem de chamados a cada troca de tela (só admin; selo sempre fresco)
+    if (user && user.role === 'admin' && typeof window.pollTickets === 'function') {
+        try { window.pollTickets(); } catch (e) {}
+    }
+
     // Setup view specific events
     if (viewName === 'tarefas') {
         if (targetView.isFirstLoad) { loadTarefas(); loadMySummary(); }
@@ -493,6 +618,12 @@ function loadView(viewName) {
         if (targetView.isFirstLoad && typeof loadRelatorios === 'function') loadRelatorios();
     } else if (viewName === 'configuracoes') {
         if (targetView.isFirstLoad) loadTickets();
+    } else if (viewName === 'chamados') {
+        if (!user || user.role !== 'admin') {
+            showToast('Acesso restrito ao administrador.', 'error');
+            return;
+        }
+        loadTickets();   // sempre recarrega (novidades aparecem sem F5)
     }
 }
 // Expõe para onclick inline (a função vive dentro do DOMContentLoaded)
@@ -1474,16 +1605,16 @@ window.loadMySummary = async function () {
             box.innerHTML = `<div class="card" style="padding:14px; text-align:center; grid-column:1/-1;">✨ Nada pendente por aqui. Bom trabalho!</div>`;
             return;
         }
-        const card = (icon, n, label, action) => `
-            <div class="card" style="padding:12px 14px; display:flex; align-items:center; gap:10px; ${action ? 'cursor:pointer;' : ''}" ${action ? `onclick="${action}"` : ''}>
+        const card = (icon, n, label, action, hint) => `
+            <div class="card summary-card ${action ? 'clickable' : ''}" style="padding:12px 14px; display:flex; align-items:center; gap:10px; ${action ? 'cursor:pointer;' : ''}" ${action ? `onclick="${action}" title="Clique para ver"` : ''}>
                 <span style="font-size:1.4rem;">${icon}</span>
-                <span><strong style="font-size:1.2rem;">${n}</strong><br><small class="text-muted">${label}</small></span>
+                <span><strong style="font-size:1.2rem;">${n}</strong><br><small class="text-muted">${label}</small>${hint ? `<br><small style="color:var(--accent); font-weight:600;">${hint} →</small>` : ''}</span>
             </div>`;
         box.innerHTML =
-            card('📂', s.abertas || 0, 'abertas', '') +
-            card('🔴', s.vencidas || 0, 'vencidas', "onTarefasOrder('critical')") +
-            card('📅', s.vencem_7d || 0, 'vencem em 7 dias', '') +
-            card('🤝', s.promessas || 0, 'promessas registradas', "loadView('relatorios')");
+            card('📂', s.abertas || 0, 'abertas', '', '') +
+            card('🔴', s.vencidas || 0, 'vencidas', "onTarefasOrder('critical')", 'filtrar') +
+            card('📅', s.vencem_7d || 0, 'vencem em 7 dias', '', '') +
+            card('🤝', s.promessas || 0, 'promessas registradas', "loadView('relatorios')", 'ver ranking');
     } catch (e) {
         console.error('Falha ao carregar resumo', e);
     }
@@ -1606,17 +1737,90 @@ window.filterTarefas = function() {
     window.onTarefasSearch(el ? el.value : '');
 }
 
+window.onKanbanSearch = function (value) {
+    clearTimeout(window._kanbanSearchTimer);
+    window._kanbanSearchTimer = setTimeout(() => window.filterKanban(), 300);
+};
+
+// Modo busca no servidor: pergunta ao banco (que vê tudo) com teto de 200,
+// renderiza no mesmo agrupador e restaura o quadro normal ao limpar.
+window.searchKanbanServer = async function (term) {
+    if (window._kanbanSearchAbort) window._kanbanSearchAbort.abort();
+    window._kanbanSearchAbort = new AbortController();
+    window._kanbanSearchMode = true;
+    const banner = document.getElementById('kanbanSearchBanner');
+    const counter = document.getElementById('kanbanSearchCount');
+    if (counter) counter.textContent = 'buscando...';
+    const emptyNote = document.getElementById('kanbanEmptySearch');
+    if (emptyNote) emptyNote.classList.add('hidden');
+    try {
+        const res = await fetch(`api/tasks.php?action=list&limit=200&search=${encodeURIComponent(term)}&_t=` + Date.now(), {
+            signal: window._kanbanSearchAbort.signal
+        });
+        const data = await res.json();
+        if (data && data.success) {
+            window.renderKanbanBoard(data.tasks || []);
+            const counterOk = document.getElementById('kanbanSearchCount');
+            if (counterOk) counterOk.textContent = '';
+            if (banner) {
+                const n = (data.tasks || []).length;
+                const extra = data.total > n ? ` (mostrando ${n} de ${data.total} — refine a busca)` : '';
+                banner.innerHTML = `🔍 <strong>${n}</strong> resultado(s) para "<strong>${escapeHtml(term)}</strong>" (busca no servidor)${extra} — <a href="#" onclick="window.clearKanbanSearch(); return false;">limpar</a>`;
+                banner.classList.remove('hidden');
+            }
+        }
+    } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        console.error('Falha na busca do Kanban', e);
+    }
+};
+
+window.clearKanbanSearch = function () {
+    const input = document.getElementById('searchKanban');
+    if (input) input.value = '';
+    window._kanbanSearchMode = false;
+    const banner = document.getElementById('kanbanSearchBanner');
+    if (banner) banner.classList.add('hidden');
+    if (typeof loadKanbanCards === 'function') loadKanbanCards(true);
+};
+
 window.filterKanban = function() {
-    const term = document.getElementById('searchKanban') ? document.getElementById('searchKanban').value.toLowerCase() : '';
+    const input = document.getElementById('searchKanban');
+    const term = input ? input.value.toLowerCase() : '';
+    if (term) {
+        // Modo busca: pergunta ao servidor (vê tudo) em vez de filtrar os 50 desenhados
+        window.searchKanbanServer(input.value.trim());
+        return;
+    }
+    // Campo limpo: sai do modo busca e restaura o quadro normal
+    if (window._kanbanSearchAbort) window._kanbanSearchAbort.abort();
+    const wasSearching = !!window._kanbanSearchMode;
+    window._kanbanSearchMode = false;
+    const banner = document.getElementById('kanbanSearchBanner');
+    if (banner) banner.classList.add('hidden');
+    if (wasSearching && typeof loadKanbanCards === 'function') loadKanbanCards(true);
     const cards = document.querySelectorAll('.kanban-card');
+    let shown = 0;
     cards.forEach(card => {
-        const text = card.innerText.toLowerCase();
+        const text = (card.innerText || card.textContent || '').toLowerCase();
         if (text.includes(term)) {
             card.style.display = '';
+            shown++;
         } else {
             card.style.display = 'none';
         }
     });
+    const counter = document.getElementById('kanbanSearchCount');
+    if (counter) counter.textContent = term ? `${shown} de ${cards.length} cards` : '';
+    const emptyNote = document.getElementById('kanbanEmptySearch');
+    if (emptyNote) {
+        if (term && shown === 0) {
+            emptyNote.textContent = `Nenhum card para "${input.value}".`;
+            emptyNote.classList.remove('hidden');
+        } else {
+            emptyNote.classList.add('hidden');
+        }
+    }
 }
 
 window.truncateAllData = async function() {
@@ -1694,7 +1898,7 @@ function renderKanbanColumn(statusKey) {
     const colDiv = document.getElementById('col-' + statusKey);
     if (!colDiv) return;
     const hasMoreServer = window.tasksPagination && window.tasksPagination.hasMore;
-    if (remaining > 0 || hasMoreServer) {
+    if ((remaining > 0 || hasMoreServer) && !window._kanbanSearchMode) {
         const moreDiv = document.createElement('div');
         moreDiv.id = 'morediv-' + statusKey;
         moreDiv.style.cssText = 'padding:0.5rem;';
@@ -1755,8 +1959,14 @@ window.loadKanbanCards = async function (forceReload = false) {
 
     const savedTasks = window.currentLoadedTasks || [];
     const isAdmin = user && user.role === 'admin';
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+
+    window.renderKanbanBoard(savedTasks);
+}
+
+// Agrupa uma lista de tarefas em colunas e renderiza (usado no modo normal e na busca).
+window.renderKanbanBoard = function (tasks) {
+    const savedTasks = tasks || [];
+    const isAdmin = user && user.role === 'admin';
 
     // Pré-agrupa cards por coluna para evitar querySelector repetido
     const colCards = {};
@@ -2859,11 +3069,13 @@ window.loadTickets = async function () {
                         'resolvido': 'Resolvido'
                     };
                     const date = new Date(ticket.created_at).toLocaleDateString('pt-BR');
+                    const isNew = !ticket.read_at;
+                    const novoBadge = isNew ? ' <span class="label" style="background:var(--danger); font-size:0.7rem;">novo</span>' : '';
 
-                    html += '<tr>';
+                    html += '<tr' + (isNew ? ' style="font-weight:600;"' : '') + '>';
                     html += '<td>#' + parseInt(ticket.id) + '</td>';
                     html += '<td>' + escapeHtml(ticket.user_name) + '<br><small style="color: var(--text-muted);">' + escapeHtml(ticket.user_email) + '</small></td>';
-                    html += '<td><strong>' + escapeHtml(ticket.subject) + '</strong></td>';
+                    html += '<td><strong>' + escapeHtml(ticket.subject) + '</strong>' + novoBadge + '</td>';
                     html += '<td>' + date + '</td>';
                     html += '<td><span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; ' + statusColors[ticket.status] + '">' + statusLabels[ticket.status] + '</span></td>';
                     html += '<td>';
@@ -2907,9 +3119,27 @@ window.updateTicketStatus = async function (id, newStatus) {
         }
     };
 
-window.viewTicket = function (id) {
-        const ticket = window._ticketsData.find(t => t.id === id);
+window.viewTicket = async function (id) {
+        id = parseInt(id);
+        let ticket = (window._ticketsData || []).find(t => t.id == id);
+        if (!ticket && typeof loadTickets === 'function') {
+            await loadTickets();
+            ticket = (window._ticketsData || []).find(t => t.id == id);
+        }
         if (!ticket) return;
+
+        // Abrir = lido (só este chamado): atualiza selo sem zerar os demais
+        if (!ticket.read_at) {
+            ticket.read_at = new Date().toISOString();
+            fetch('api/tickets.php?action=mark_read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            }).then(() => {
+                if (typeof window.pollTickets === 'function') window.pollTickets();
+                if (typeof loadTickets === 'function') loadTickets();
+            }).catch(() => {});
+        }
 
         const statusColors = {
             'aberto': 'background: #FEF3C7; color: #92400E;',

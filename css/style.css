@@ -314,6 +314,16 @@ a:hover {
     color: #fff;
 }
 
+/* Cartão clicável do resumo (hover evidente) */
+.summary-card.clickable {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.summary-card.clickable:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
 .btn-block {
     width: 100%;
 }
