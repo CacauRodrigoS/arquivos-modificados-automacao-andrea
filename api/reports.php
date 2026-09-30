@@ -90,6 +90,102 @@ try {
     $summary['promessas'] = (int)$stmtProm->fetchColumn();
     $summary = array_map(fn($v) => (int)$v, $summary);
 
+    // 6. Exportação (download direto; mesmas queries/permissões acima)
+    // type: um ou vários separados por vírgula (ranking_atendentes|ranking_imoveis|ranking_devolutivas|tasks|todas)
+    // format: xls (padrão, tabelas estilizadas) | csv (cru, com BOM e ;)
+    if (($_GET['action'] ?? '') === 'export') {
+        $rawType = $_GET['type'] ?? '';
+        $format = strtolower($_GET['format'] ?? 'xls');
+        $allowed = ['ranking_atendentes', 'ranking_imoveis', 'ranking_devolutivas', 'tasks'];
+        if ($rawType === 'todas') {
+            $wanted = ['ranking_devolutivas', 'ranking_atendentes', 'ranking_imoveis'];
+        } else {
+            $wanted = array_values(array_intersect(explode(',', $rawType), $allowed));
+            if (empty($wanted)) {
+                jsonResponse(['success' => false, 'error' => 'Tipo inválido.'], 400);
+            }
+        }
+        if (!in_array($format, ['xls', 'csv'], true)) $format = 'xls';
+
+        $buildRanking = function ($nameKey, $list) {
+            return [
+                'header' => [$nameKey, 'total', 'percentual'],
+                'rows' => array_map(fn($r) => [$r[$nameKey] ?? 'Desconhecido', $r['total'], str_replace('.', ',', (string)$r['percent'])], $list),
+            ];
+        };
+        $sections = [];
+        // Ordem fixa dos blocos (previsível independente da ordem marcada)
+        $orderBlocks = ['ranking_devolutivas', 'ranking_atendentes', 'ranking_imoveis', 'tasks'];
+        foreach ($orderBlocks as $block) {
+            if (!in_array($block, $wanted, true)) continue;
+            if ($block === 'tasks') {
+                $stmtExp = $pdo->prepare("SELECT property_name, client_name, status, due_date FROM tasks t $where ORDER BY created_at DESC LIMIT 5000");
+                $stmtExp->execute($params);
+                $sections[] = [
+                    'title' => 'Tarefas',
+                    'header' => ['imovel', 'cliente', 'status', 'vencimento'],
+                    'rows' => array_map(fn($r) => [$r['property_name'], $r['client_name'], $r['status'], $r['due_date']], $stmtExp->fetchAll()),
+                ];
+            } elseif ($block === 'ranking_devolutivas') {
+                $sections[] = ['title' => 'Ranking de Devolutivas'] + $buildRanking('devolutiva', $rankingDevolutivas);
+            } elseif ($block === 'ranking_atendentes') {
+                $sections[] = ['title' => 'Ranking de Atendentes'] + $buildRanking('atendente', $rankingAtendentes);
+            } elseif ($block === 'ranking_imoveis') {
+                $sections[] = ['title' => 'Ranking de Imóveis'] + $buildRanking('imovel', $rankingImoveisAll);
+            }
+        }
+
+        if (ob_get_length()) ob_clean();
+        $stamp = date('Y-m-d');
+        $fileTag = ($rawType === 'todas' || count($wanted) > 1) ? 'combinado' : $wanted[0];
+        if ($format === 'csv') {
+            // CSV cru: só a 1ª seção (CSV não comporta blocos)
+            $sec = $sections[0];
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $fileTag . '_' . $stamp . '.csv"');
+            echo "\xEF\xBB\xBF";
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $sec['header'], ';');
+            foreach ($sec['rows'] as $row) fputcsv($out, $row, ';');
+            fclose($out);
+            exit;
+        }
+        // XLS de verdade (SpreadsheetML: Excel e Google Sheets abrem com abas e estilo)
+        $escXml = fn($v) => htmlspecialchars((string)($v ?? ''), ENT_QUOTES | ENT_XML1, 'UTF-8');
+        $sheetName = fn($t) => mb_substr(preg_replace('/[\\\\\\/\\?\\*:\\[\\]]+/', '', $t), 0, 31);
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename="relatorio_' . $fileTag . '_' . $stamp . '.xls"');
+        echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
+        echo '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+        echo '<Styles><Style ss:ID="sHeader"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1B3A2A" ss:Pattern="Solid"/></Style>';
+        echo '<Style ss:ID="sTotal"><Font ss:Bold="1"/></Style></Styles>';
+        foreach ($sections as $sec) {
+            echo '<Worksheet ss:Name="' . $escXml($sheetName($sec['title'])) . '"><Table>';
+            echo '<Row>';
+            foreach ($sec['header'] as $h) echo '<Cell ss:StyleID="sHeader"><Data ss:Type="String">' . $escXml($h) . '</Data></Cell>';
+            echo '</Row>';
+            $sum = 0;
+            foreach ($sec['rows'] as $row) {
+                echo '<Row>';
+                foreach ($row as $i => $cell) {
+                    $num = ($i === 1 && is_numeric($cell));
+                    if ($num) $sum += $cell;
+                    echo '<Cell><Data ss:Type="' . ($num ? 'Number' : 'String') . '">' . $escXml($cell) . '</Data></Cell>';
+                }
+                echo '</Row>';
+            }
+            if (count($sec['header']) === 3) {
+                echo '<Row><Cell ss:StyleID="sTotal"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sTotal"><Data ss:Type="Number">' . $sum . '</Data></Cell><Cell><Data ss:Type="String"></Data></Cell></Row>';
+            } else {
+                echo '<Row><Cell ss:StyleID="sTotal"><Data ss:Type="String">Total de linhas: ' . count($sec['rows']) . '</Data></Cell></Row>';
+            }
+            echo '</Table></Worksheet>';
+        }
+        echo '</Workbook>';
+        exit;
+    }
+
     jsonResponse([
         'success' => true,
         'data' => [

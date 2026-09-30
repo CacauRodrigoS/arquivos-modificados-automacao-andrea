@@ -2607,6 +2607,26 @@ window.getRankingName = function (item) {
     return item.atendente || item.imovel || item.devolutiva || 'Desconhecido';
 };
 
+window.exportCsv = function (type, format) {
+    const allowed = ['ranking_atendentes', 'ranking_imoveis', 'ranking_devolutivas', 'tasks', 'todas'];
+    const parts = String(type || '').split(',').map(s => s.trim()).filter(t => allowed.includes(t));
+    const t = parts.length > 0 ? parts.join(',') : 'todas';
+    const f = format === 'csv' ? 'csv' : 'xls';
+    window.open(`api/reports.php?action=export&type=${encodeURIComponent(t)}&format=${f}`, '_blank');
+};
+
+window.exportChecked = function () {
+    const allowed = ['ranking_devolutivas', 'ranking_atendentes', 'ranking_imoveis', 'tasks'];
+    const picked = [...document.querySelectorAll('#exportChecks input:checked')]
+        .map(c => c.dataset.exp)
+        .filter(t => allowed.includes(t));
+    if (picked.length === 0) {
+        if (typeof showToast === 'function') showToast('Marque ao menos uma opção para exportar.', 'error');
+        return;
+    }
+    window.exportCsv(picked.join(','), 'xls');
+};
+
 window.openRankingModal = function (title, items, color) {
     const modal = document.getElementById('modalOverlay');
     if (!modal) return;
@@ -2809,6 +2829,15 @@ window.loadRelatorios = async function () {
                     <div class="card" style="padding: 24px; text-align:center; margin-bottom: 20px;">
                         <h4 style="color:var(--text-muted); margin-bottom:10px;">Total de Atendimentos</h4>
                         <h1 id="reportsTotal" style="font-size: 4rem; color:var(--primary); margin:0; line-height:1;">${total}</h1>
+                    </div>
+
+                    <div style="display:flex; gap:12px; align-items:center; justify-content:flex-end; margin-bottom:14px; flex-wrap:wrap;" id="exportChecks">
+                        <span class="text-muted" style="font-size:0.85rem;">Exportar:</span>
+                        <label style="font-size:0.85rem; display:flex; gap:4px; align-items:center;"><input type="checkbox" data-exp="ranking_devolutivas" checked> Devolutivas</label>
+                        <label style="font-size:0.85rem; display:flex; gap:4px; align-items:center;"><input type="checkbox" data-exp="ranking_atendentes" checked> Atendentes</label>
+                        <label style="font-size:0.85rem; display:flex; gap:4px; align-items:center;"><input type="checkbox" data-exp="ranking_imoveis" checked> Imóveis</label>
+                        <label style="font-size:0.85rem; display:flex; gap:4px; align-items:center;"><input type="checkbox" data-exp="tasks"> Tarefas</label>
+                        <button class="btn-secondary btn-sm" onclick="window.exportChecked()">⬇ Baixar Excel</button>
                     </div>
 
                     <div class="reports-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
