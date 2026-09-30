@@ -2233,6 +2233,10 @@ window.openTaskDetails = async function (taskId) {
             const obs = document.getElementById('taskObservations').value;
             const start = document.getElementById('taskStartDate').value;
             const due = document.getElementById('taskDueDate').value;
+            const originalHtml = btnSaveDetails.innerHTML;
+            btnSaveDetails.disabled = true;
+            btnSaveDetails.classList.add('btn-loading');
+            btnSaveDetails.innerHTML = '<span class="spin">↻</span> Salvando...';
             try {
                 const formData = new FormData();
                 formData.append('task_id', taskId);
@@ -2256,6 +2260,10 @@ window.openTaskDetails = async function (taskId) {
             } catch (e) {
                 console.error(e);
                 showToast('Falha na comunicação ao tentar salvar.', 'error');
+            } finally {
+                btnSaveDetails.disabled = false;
+                btnSaveDetails.classList.remove('btn-loading');
+                btnSaveDetails.innerHTML = originalHtml;
             }
         };
     }

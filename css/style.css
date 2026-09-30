@@ -328,6 +328,14 @@ a:hover {
     width: 100%;
 }
 
+/* Cartão padrão do sistema (usado via class="card") */
+.card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+}
+
 .btn-accent {
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
     color: #FFFFFF;
