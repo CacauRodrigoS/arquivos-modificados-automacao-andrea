@@ -559,6 +559,21 @@ const views = {
                     <div id="ticketFeedback" style="margin-top: 0.5rem; font-size: 0.9rem;"></div>
                     <button class="btn-primary" style="width: 100%;" onclick="sendTicket()">Enviar Chamado</button>
                 </div>
+
+                <div style="background: var(--bg-surface); padding: 2rem; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h4 style="margin-bottom: 1.5rem; color: var(--primary);">⌨️ Atalhos de teclado</h4>
+                    <div style="margin-bottom: 1rem;">
+                        <strong style="display:block; margin-bottom: 0.25rem;"><kbd style="background: var(--bg-body); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.5rem;">/</kbd> focar busca</strong>
+                        <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.4;">Vai direto para a busca de Tarefas ou Kanban, sem mouse.</p>
+                    </div>
+                    <div style="margin-bottom: 0;">
+                        <strong style="display:block; margin-bottom: 0.25rem;"><kbd style="background: var(--bg-body); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.5rem;">Esc</kbd> fechar</strong>
+                        <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.4;">Fecha o modal aberto. Com texto não salvo, pergunta antes.</p>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 2rem; text-align: center;">
+                <button class="btn-secondary" onclick="window.startTour(true)">🔁 Refazer tour guiado</button>
             </div>
         </div>`
 };
@@ -643,6 +658,40 @@ document.addEventListener('click', (e) => {
 document.addEventListener('change', (e) => {
     if (e.target.id === 'importTasksInput') {
         handleTasksImport(e);
+    }
+});
+
+// --- Atalhos de teclado globais (/ foca busca, Esc fecha modal) ---
+document.addEventListener('keydown', (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement && document.activeElement.tagName) || '');
+    // "/" foca a busca visível (nunca roubando digitação)
+    if (e.key === '/' && !typing) {
+        const inView = document.querySelector('#view-tarefas #searchTarefas, #view-kanban #searchKanban');
+        const visible = inView && inView.offsetParent !== null ? inView : null;
+        const target = visible
+            || [...document.querySelectorAll('#searchTarefas, #searchKanban')].find(el => el.offsetParent !== null);
+        if (target) { e.preventDefault(); target.focus(); }
+        return;
+    }
+    // Esc fecha modal (com proteção de rascunho no detalhes)
+    if (e.key === 'Escape') {
+        // Confirmação/pergunta aberta tem prioridade (cancela por ela, sem travar a promessa)
+        const pmCancel = document.querySelector('#pmCancel');
+        if (pmCancel) { pmCancel.click(); return; }
+        const cfCancel = document.querySelector('#cfCancel');
+        if (cfCancel) { cfCancel.click(); return; }
+        const details = document.getElementById('taskDetailsModal');
+        if (details && !details.classList.contains('hidden')) {
+            if (window.hasTaskDraft && window.hasTaskDraft()) {
+                window.confirmModal('Fechar sem registrar? O texto digitado será perdido.', 'Fechar mesmo assim')
+                    .then(ok => { if (ok) closeModals(); });
+            } else {
+                closeModals();
+            }
+            return;
+        }
+        const overlay = document.getElementById('modalOverlay');
+        if (overlay && !overlay.classList.contains('hidden')) closeModals();
     }
 });
 
@@ -2931,13 +2980,66 @@ function animateReportsTotal(target) {
 
 // Default view (called at the end to ensure all functions are defined)
 
+// --- Tour guiado (primeira vez) ---
+const TOUR_STEPS = [
+    { sel: 'a.nav-item[data-view="tarefas"]', icon: '📋', title: 'Tarefas', text: 'Aqui ficam seus atendimentos. Use a busca, os filtros, a ordenação e o resumo do dia.' },
+    { sel: 'a.nav-item[data-view="kanban"]', icon: '📊', title: 'Kanban', text: 'Arraste os cards de coluna para mudar o status. Use a busca para encontrar qualquer card.' },
+    { sel: 'a.nav-item[data-view="relatorios"]', icon: '📈', title: 'Relatórios', text: 'Rankings, resumo e exportação em Excel.' },
+    { sel: '#bellBtn', icon: '🔔', title: 'Notificações', text: 'Chamados novos dos usuários aparecem aqui (admin).' },
+];
+
+window.startTour = function (force) {
+    if (!force) {
+        try { if (localStorage.getItem('tour_visto_v1')) return; } catch (e) {}
+    }
+    let i = 0;
+    const finish = () => {
+        try { localStorage.setItem('tour_visto_v1', '1'); } catch (e) {}
+        document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
+        const tip = document.getElementById('tourTip');
+        if (tip) tip.remove();
+    };
+    const show = () => {
+        document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
+        const old = document.getElementById('tourTip');
+        if (old) old.remove();
+        if (i >= TOUR_STEPS.length) { finish(); return; }
+        const st = TOUR_STEPS[i];
+        const el = document.querySelector(st.sel);
+        if (!el || el.offsetParent === null) { i++; show(); return; } // invisível (permissão): pula
+        el.classList.add('tour-highlight');
+        try { el.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+        const last = i === TOUR_STEPS.length - 1;
+        const tip = document.createElement('div');
+        tip.id = 'tourTip';
+        tip.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:10000; background:var(--bg-surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.2); padding:16px 18px; max-width:340px; width:calc(100% - 40px);';
+        tip.innerHTML = `
+            <div style="font-size:1.6rem;">${st.icon}</div>
+            <p style="font-weight:700; margin:6px 0 4px;">${escapeHtml(st.title)} (${i + 1}/${TOUR_STEPS.length})</p>
+            <p class="text-muted" style="font-size:0.85rem; margin:0 0 12px;">${escapeHtml(st.text)}</p>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                ${i > 0 ? '<button class="btn-secondary btn-sm" id="tourBack">Voltar</button>' : ''}
+                <button class="btn-secondary btn-sm" id="tourSkip">Pular</button>
+                <button class="btn-primary btn-sm" id="tourNext">${last ? 'Concluir 🎉' : 'Próximo →'}</button>
+            </div>`;
+        document.body.appendChild(tip);
+        const back = document.getElementById('tourBack');
+        if (back) back.onclick = () => { i--; show(); };
+        document.getElementById('tourSkip').onclick = finish;
+        document.getElementById('tourNext').onclick = () => { i++; show(); };
+    };
+    show();
+};
+
 // Carregar usuários globalmente para os dropdowns
 if (typeof window.loadUsers === 'function') {
     window.loadUsers().then(() => {
         loadView('tarefas');
+        window.startTour();
     });
 } else {
     loadView('tarefas');
+    window.startTour();
 }
 });
 

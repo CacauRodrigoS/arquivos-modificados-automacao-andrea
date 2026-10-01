@@ -1,7 +1,7 @@
 # Documentação do Projeto Cobrança Task
 
-**Versão:** 1.6.1  
-**Última atualização:** 30/09/2026
+**Versão:** 1.6.2  
+**Última atualização:** 01/10/2026
 
 ---
 
@@ -163,6 +163,12 @@ Arquivo principal da aplicação (2563 linhas). Contém toda a lógica do fronte
 - `renderRankingRow()` — wrapper legado, delega para `renderRankingBar`
 - `getRankingName()` — retorna `atendente || imovel || devolutiva`
 - `openRankingModal()` — abre modal com ranking completo no mesmo padrão barra + % (título escapado, tolera lista nula)
+
+**Usabilidade (v1.6.x):**
+- `confirmModal()` / `promptModal()` / `emptyStateHtml()` — moldes únicos de confirmação, entrada e vazio
+- `startTour()` + `TOUR_STEPS` — tour guiado (`tour_visto_v1`, botão Refazer na Ajuda)
+- Atalhos `/` (foca busca) e `Esc` (fecha modal, com proteção de rascunho)
+- Rascunho por tarefa+usuário (`draftKey`/`saveTaskDraft`/`restoreTaskDraft`/`clearTaskDraft`, validade 7 dias)
 
 **Configurações:**
 - `saveProfile()` — salva dados do perfil
@@ -518,6 +524,7 @@ Todos os endpoints da API (exceto `login`) exigem sessão válida. O middleware 
 
 | Versão | Data | Alterações |
 |--------|------|------------|
+| 1.6.2 | 01/10/2026 | Tour guiado de boas-vindas (4 passos, destaque pulsante, `tour_visto_v1`, botão Refazer na Ajuda); atalhos `/` (foca busca) e `Esc` (fecha modal com proteção de rascunho) + cartão na Ajuda; busca do Kanban com debounce, contador e modo servidor (teto 200); resumo clicável explícito; `dueBadgeHtml`; ordenação crítica; filtro por status; rascunho real; `app.js?v=33`, `style.css?v=13` |
 | 1.6.1 | 30/09/2026 | Classe `.card` real no CSS (fundo/borda/cantos/sombra via tema; 9 cartões passam a ter corpo); loading anti-duplo-clique no Salvar Alterações (molde dos outros botões); fundo próprio no dropdown do sino; `style.css?v=12`, `app.js?v=31` |
 | 1.6.0 | 30/09/2026 | Exportação refeita: checklist (qualquer combinação via `type=a,b` validado) no lugar do dropdown; formato Excel real SpreadsheetML multi-abas (uma por seção, cabeçalho verde/negrito, TOTAL) que Excel e Sheets abrem; CSV mantido via `format=csv`; `app.js?v=31` |
 | 1.5.9 | 29/09/2026 | Notificações de chamados: sino 🔔 no topo (só admin) com pilha (top 10 não lidos, "Ver"/"Marcar todas"/"Ver todos", sem toast), página Chamados própria no submenu, lido por chamado (`mark_read` aceita `id`, `unread_list`), coluna `read_at` (`migrate_tickets_read.php`); busca do Kanban no servidor (teto 200, `renderKanbanBoard` reaproveitado, banner + restaura ao limpar, debounce + contador); resumo clicável explícito (dicas, tooltip, hover); fundo próprio no dropdown do sino; `app.js?v=27` |

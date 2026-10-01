@@ -1,4 +1,5 @@
 :root {
+    color-scheme: light dark;
     /* Cores Globais - BV Garantia */
     --primary: #1B3A2A;
     --primary-light: #2D5A40;
@@ -43,6 +44,7 @@
 }
 
 [data-theme="dark"] {
+    color-scheme: dark;
     --bg-body: #0D1A12;
     --bg-surface: #162118;
     --bg-surface-hover: #1E2D22;
@@ -261,6 +263,27 @@ a:hover {
     box-shadow: 0 0 0 3px rgba(139, 110, 47, 0.15);
 }
 
+/* Campo padrão do sistema (buscas, textos e selects fora de .input-group) */
+.form-control {
+    background-color: var(--bg-surface);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.7rem 0.9rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+.form-control:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 110, 47, 0.15);
+}
+
 /* Buttons */
 .btn-primary {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
@@ -312,6 +335,18 @@ a:hover {
     background-color: var(--primary);
     border-color: var(--primary);
     color: #fff;
+}
+
+/* Destaque do tour guiado */
+.tour-highlight {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 8px;
+    animation: tourPulse 1.2s ease-in-out infinite;
+}
+@keyframes tourPulse {
+    0%, 100% { outline-color: var(--accent); }
+    50% { outline-color: transparent; }
 }
 
 /* Cartão clicável do resumo (hover evidente) */
@@ -1036,7 +1071,7 @@ a:hover {
 }
 
 .data-table tbody tr:nth-child(even) {
-    background-color: rgba(245, 243, 240, 0.5);
+    background-color: var(--bg-surface-hover);
 }
 
 .data-table tbody tr:nth-child(even):hover {
