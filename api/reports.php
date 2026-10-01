@@ -119,8 +119,25 @@ try {
         foreach ($orderBlocks as $block) {
             if (!in_array($block, $wanted, true)) continue;
             if ($block === 'tasks') {
-                $stmtExp = $pdo->prepare("SELECT property_name, client_name, status, due_date FROM tasks t $where ORDER BY created_at DESC LIMIT 5000");
-                $stmtExp->execute($params);
+                // Espelha os filtros da tela (busca/status/ordem); rankings ignoram
+                $expWhere = $where;
+                $expParams = $params;
+                $expSearch = trim($_GET['search'] ?? '');
+                if ($expSearch !== '') {
+                    $expWhere .= " AND (t.property_name LIKE ? OR t.client_name LIKE ? OR t.client_code LIKE ?)";
+                    $like = '%' . $expSearch . '%';
+                    $expParams[] = $like; $expParams[] = $like; $expParams[] = $like;
+                }
+                $expStatus = $_GET['status'] ?? 'all';
+                if (in_array($expStatus, ['todo', 'in_progress', 'done'], true)) {
+                    $expWhere .= " AND t.status = ?";
+                    $expParams[] = $expStatus;
+                }
+                $expOrder = (($_GET['order'] ?? 'recent') === 'critical')
+                    ? "CASE WHEN t.status = 'done' THEN 1 ELSE 0 END, CASE WHEN t.due_date IS NULL OR t.due_date = '0000-00-00' THEN 1 ELSE 0 END, t.due_date ASC"
+                    : "t.created_at DESC";
+                $stmtExp = $pdo->prepare("SELECT property_name, client_name, status, due_date FROM tasks t $expWhere ORDER BY $expOrder LIMIT 5000");
+                $stmtExp->execute($expParams);
                 $sections[] = [
                     'title' => 'Tarefas',
                     'header' => ['imovel', 'cliente', 'status', 'vencimento'],

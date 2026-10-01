@@ -1,6 +1,6 @@
 # Documentação do Projeto Cobrança Task
 
-**Versão:** 1.6.2  
+**Versão:** 1.6.3
 **Última atualização:** 01/10/2026
 
 ---
@@ -524,6 +524,7 @@ Todos os endpoints da API (exceto `login`) exigem sessão válida. O middleware 
 
 | Versão | Data | Alterações |
 |--------|------|------------|
+| 1.6.3 | 01/10/2026 | Export de Tarefas respeita filtros da tela (busca/status/ordem no `export` do `reports.php`); botão "⬇ Exportar Planilha" na tela de Tarefas; tooltips nos chips, "+ Adicionar Coluna" e "Carregar mais"; 🥇 para o 1º lugar dos rankings; borda vermelha no cartão de vencidas; som no sino (Web Audio pim-pom, só quando aumenta, botão 🔊/🔇 com preferência salva); filtros salvos (⭐ Salvar/aplicar/apagar via `localStorage`, prateleira redesenha ao abrir Tarefas); `app.js?v=36` |
 | 1.6.2 | 01/10/2026 | Tour guiado de boas-vindas (4 passos, destaque pulsante, `tour_visto_v1`, botão Refazer na Ajuda); atalhos `/` (foca busca) e `Esc` (fecha modal com proteção de rascunho) + cartão na Ajuda; busca do Kanban com debounce, contador e modo servidor (teto 200); resumo clicável explícito; `dueBadgeHtml`; ordenação crítica; filtro por status; rascunho real; `app.js?v=33`, `style.css?v=13` |
 | 1.6.1 | 30/09/2026 | Classe `.card` real no CSS (fundo/borda/cantos/sombra via tema; 9 cartões passam a ter corpo); loading anti-duplo-clique no Salvar Alterações (molde dos outros botões); fundo próprio no dropdown do sino; `style.css?v=12`, `app.js?v=31` |
 | 1.6.0 | 30/09/2026 | Exportação refeita: checklist (qualquer combinação via `type=a,b` validado) no lugar do dropdown; formato Excel real SpreadsheetML multi-abas (uma por seção, cabeçalho verde/negrito, TOTAL) que Excel e Sheets abrem; CSV mantido via `format=csv`; `app.js?v=31` |

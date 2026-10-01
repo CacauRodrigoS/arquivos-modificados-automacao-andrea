@@ -117,6 +117,7 @@ window.pollTickets = async function () {
         const res = await fetch('api/tickets.php?action=count_unread');
         const data = await res.json();
         const n = (data && data.success) ? (data.unread || 0) : 0;
+        const prev = window._lastUnread || 0;
         window._lastUnread = n;
         const bellCount = document.getElementById('bellCount');
         if (bellCount) {
@@ -143,12 +144,63 @@ window.pollTickets = async function () {
         if (dd && !dd.classList.contains('hidden') && typeof window.loadBellStack === 'function') {
             await window.loadBellStack();
         }
+        if (n > prev) window.playNotifSound();
     } catch (e) {
         console.error('Falha na sondagem de chamados', e);
     }
 };
 
 // --- Sino de notificações (pilha de chamados não lidos, só admin) ---
+window.playNotifSound = function () {
+    if (window.isBellMuted()) return;
+    try {
+        const Audio = window.AudioContext || window.webkitAudioContext;
+        window._audioCtx = window._audioCtx || new Audio();
+        const context = window._audioCtx;
+        if (context.state === 'suspended') context.resume();
+        const now = context.currentTime;
+        [[660, 0],[880,0.18]].forEach(([freq, delay]) => {
+            const osc = context.createOscillator();
+            const gain = context.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+
+            gain.gain.setValueAtTime(0.0001, now + delay);
+            gain.gain.exponentialRampToValueAtTime(0.25, now + delay + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.16);
+
+            osc.connect(gain).connect(context.destination);
+            osc.start(now+delay);
+            osc.stop(now+delay+0.2)
+        });
+    } catch (e) {}
+};
+
+// Verifica se o sino está mutado
+window.isBellMuted = function () {
+    try { 
+        return localStorage.getItem('sino_mudo') === '1'
+    } catch (e) {
+        return false;
+    }
+};
+
+// Desliga o sino
+window.toggleBellMute = function () {
+    try {
+        localStorage.setItem('sino_mudo', window.isBellMuted() ? '0' : '1');
+    } catch (e) {}
+    window.refreshBellMute();
+};
+
+//Verifica novamente o estado do sino e muda o ícone do botão
+window.refreshBellMute = function () {
+    const btn = document.getElementById('muteBtn');
+    if (btn) btn.textContent = window.isBellMuted() ? '🔇' : '🔊';
+};
+
+// Ligar o sino
 window.toggleBell = async function (force) {
     const dd = document.getElementById('bellDropdown');
     if (!dd) return;
@@ -158,6 +210,7 @@ window.toggleBell = async function (force) {
     await window.loadBellStack();
 };
 
+// Carrega as notificações
 window.loadBellStack = async function () {
     const dd = document.getElementById('bellDropdown');
     if (!dd) return;
@@ -170,7 +223,7 @@ window.loadBellStack = async function () {
             dd.innerHTML = '<p class="text-muted" style="padding:1rem; text-align:center;">Nenhuma notificação. 🎉</p>';
             return;
         }
-        let html = '';
+        let html = '<div style="display:flex; align-items:center; justify-content:space-between; padding: 0.7rem 1rem; border-bottom:1px solid var(--border);"> <strong style="font-size:0.85rem;">Notificações</strong><button id="muteBtn" class="icon-btn" title="Ativar/Desativar som" style="font-size:1rem;" onclick="window.toggleBellMute()">🔊</button></div>';
         items.forEach((t) => {
             const date = new Date(t.created_at).toLocaleDateString('pt-BR');
             html += `<div style="padding:0.7rem 1rem; border-bottom:1px solid var(--border);">
@@ -184,11 +237,95 @@ window.loadBellStack = async function () {
             <button class="btn-secondary btn-sm" style="flex:1;" onclick="window.toggleBell(false); loadView('chamados')">Ver todos</button>
         </div>`;
         dd.innerHTML = html;
+        window.refreshBellMute();
     } catch (e) {
         dd.innerHTML = '<p style="color:var(--danger); padding:1rem; text-align:center;">Falha ao carregar.</p>';
     }
 };
 
+// Salva os filtros atuais
+window.saveCurrentFilter = function () {
+    const searchEl = document.getElementById('searchTarefas');
+    const search = searchEl ? searchEl.value : '';
+    const status = (window.tasksPagination && window.tasksPagination.status) || 'all';
+    const order = (window.tasksPagination && window.tasksPagination.order) || 'recent'
+    const name = prompt('Nome do filtro:', search || status);
+    if (!name) return;
+    let list = [];
+    try {
+        list = JSON.parse(localStorage.getItem('filtro_tarefas') || '[]');
+    } catch (e){
+        {list = [];}
+    }
+    list.push({name: name, search: search, status: status, order:order});
+    try{
+        localStorage.setItem('filtro_tarefas', JSON.stringify(list));
+    } catch (e) {}
+    if (typeof window.renderSavedFilter === 'function') window.renderSavedFilter();
+    if (typeof showToast === 'function') showToast('Filtro salvo! ⭐', 'success')
+}
+
+// Desenha um botão para cada filtro salvo no dropdown
+window.renderSavedFilter = function () {
+    const shelf = document.getElementById('savedFilters');
+    if (!shelf) return;
+    let list = [];
+    try {
+        list = JSON.parse(localStorage.getItem('filtro_tarefas') || '[]');
+        
+    } catch (e) {
+        list = [];
+    }
+    if (list.lenght === 0) {
+        shelf.innerHTML = '';
+        return;
+    }
+    let html = '';
+    list.forEach((f,i) => {
+        html += `<span style="display:inline-flex; gap:4px; align-items:center;"><button class="btn-secondary btn-sm" title="Aplicar este filtro" onclick = "window.applySavedFilter(${i})">⚡${f.name}</button><button class="btn-secondary btn-sm" title="Apagar este filtro" onclick="window.deleteSavedFilter(${i})">×</button></span>`
+    });
+    shelf.innerHTML= html;
+};
+
+// Aplica o filtro da posição do index (i)
+window.applySavedFilter = function (i) {
+    let list = [];
+    try {
+        list = JSON.parse(localStorage.getItem('filtro_tarefas') || '[]');
+    } catch (e) {
+        list = [];
+    }
+    const f = list [i];
+    if (!f) return;
+    const searchEl = document.getElementById('searchTarefas');
+    if (searchEl) searchEl.value = f.search || '';
+    const orderEl = document.getElementById('orderTarefas');
+    if (orderEl) orderEl.value = f.order || 'recent';
+    if (typeof window.onTarefasStatus === 'function')
+    window.onTarefasStatus(f.status || 'all');
+    else if (typeof window.loadTarefas === 'function') window.loadTarefas(true);
+    if (typeof showToast === 'function') showToast(`Filtro "${f.name}" aplicado!⚡`, 'success')
+};
+
+//Apaga o filtro da posição do index (i)
+window.deleteSavedFilter = function(i){
+    let list = [];
+    try {
+        list = JSON.parse(localStorage.getItem('filtro_tarefas') || '[]')
+    } catch (e) {
+        list = [];
+    }
+    const f = list [i];
+    if (!f) return;
+    if (!confirm(`Apagar o filtro "${f.name}"?`)) return;
+    list.splice(i,1);
+    try {
+        localStorage.setItem('filtro_tarefas', JSON.stringify(list));
+    } catch (e) {}
+    if (typeof window.renderSavedFilter === 'function') window.renderSavedFilter();
+}
+
+// Marca todos os chamados como "lido"
 window.markAllTicketsRead = async function () {
     try {
         await fetch('api/tickets.php?action=mark_read', { method: 'POST' });
@@ -197,6 +334,8 @@ window.markAllTicketsRead = async function () {
         if (typeof loadTickets === 'function') loadTickets();
     } catch (e) {}
 };
+
+
 
 // Abre um chamado vindo do sino (garante a view + dados antes do modal).
 window.openTicketFromBell = async function (id) {
@@ -252,6 +391,8 @@ const views = {
                             <option value="recent">Mais recentes</option>
                             <option value="critical">⚠️ Mais críticas</option>
                         </select>
+                        <button class="btn-secondary btn-sm" title="Salvar a combinação atual de filtros" onclick="if(typeof saveCurrentFilter === 'function') saveCurrentFilter()">⭐ Salvar filtro</button>
+                        <button class="btn-secondary btn-sm" title="Baixar as tarefas filtradas em Excel" onclick="if(typeof exportTasks === 'function') exportTasks()">⬇ Exportar Planilha</button>
                         <input type="file" id="importTasksInput" accept=".xls,.xlsx" style="display:none">
                         <button class="btn-secondary" id="btnImportTasks" style="display: ${user && user.role === 'admin' ? 'block' : 'none'}">Importar Planilha</button>
                         <button class="btn-secondary danger-text" id="btnTruncateTasks" style="display: ${user && user.role === 'admin' ? 'block' : 'none'}" onclick="if(typeof truncateAllData === 'function') truncateAllData()">Zerar Dados</button>
@@ -261,11 +402,13 @@ const views = {
 
                 <div id="mySummary" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:1rem;"></div>
 
+                <div id="savedFilters" style="display:flex; gap: 8px; margin-bottom:1rem; flex-wrap:wrap;"></div>
+
                 <div style="display:flex; gap:8px; margin-bottom:1rem; flex-wrap:wrap;" id="statusChips">
-                    <button class="btn-secondary btn-sm chip-active" data-status="all" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('all')">Todas</button>
-                    <button class="btn-secondary btn-sm" data-status="todo" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('todo')">A Fazer</button>
-                    <button class="btn-secondary btn-sm" data-status="in_progress" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('in_progress')">Atendendo</button>
-                    <button class="btn-secondary btn-sm" data-status="done" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('done')">Finalizado</button>
+                    <button class="btn-secondary btn-sm chip-active" title="Mostrar todas as tarefas" data-status="all" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('all')">Todas</button>
+                    <button class="btn-secondary btn-sm" title="Mostrar as tarefas à fazer" data-status="todo" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('todo')">A Fazer</button>
+                    <button class="btn-secondary btn-sm" title="Mostrar as tarefas em atendimento" data-status="in_progress" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('in_progress')">Atendendo</button>
+                    <button class="btn-secondary btn-sm" title="Mostrar as tarefas finalizadas" data-status="done" onclick="if(typeof onTarefasStatus === 'function') onTarefasStatus('done')">Finalizado</button>
                 </div>
                 
                 <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden;">
@@ -288,7 +431,7 @@ const views = {
                     </table>
                     <div id="tarefasFooter" style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0.9rem 1rem; border-top:1px solid var(--border);">
                         <span id="tarefasCounter" style="font-size:0.85rem; color:var(--text-muted);">Carregando...</span>
-                        <button class="btn-secondary" id="btnLoadMoreTarefas" onclick="if(typeof loadMoreTarefas === 'function') loadMoreTarefas()">Carregar mais (50)</button>
+                        <button class="btn-secondary" title="Carregar mais 50 tarefas" id="btnLoadMoreTarefas" onclick="if(typeof loadMoreTarefas === 'function') loadMoreTarefas()">Carregar mais (50)</button>
                     </div>
                 </div>
             </div>
@@ -303,7 +446,7 @@ const views = {
                             <input type="search" id="searchKanban" class="search-input" placeholder="Pesquisar registros..." oninput="if(typeof onKanbanSearch === 'function') onKanbanSearch(this.value)">
                         </div>
                         <span id="kanbanSearchCount" class="text-muted" style="font-size:0.8rem; white-space:nowrap;"></span>
-                        <button class="btn-primary btn-sm" onclick="promptAddColumn()">+ Adicionar Coluna</button>
+                        <button class="btn-primary btn-sm" title="Criar uma nova coluna no quadro" onclick="promptAddColumn()">+ Adicionar Coluna</button>
                     </div>
                 </div>
                 <div id="kanbanEmptySearch" class="hidden" style="text-align:center; padding:1rem; color:var(--text-muted);"></div>
@@ -620,7 +763,7 @@ function loadView(viewName) {
 
     // Setup view specific events
     if (viewName === 'tarefas') {
-        if (targetView.isFirstLoad) { loadTarefas(); loadMySummary(); }
+        if (targetView.isFirstLoad) { loadTarefas(); loadMySummary(); if (typeof window.renderSavedFilter === 'function') window.renderSavedFilter();}
     } else if (viewName === 'kanban') {
         if (targetView.isFirstLoad) loadKanbanCards();
     } else if (viewName === 'lixeira') {
@@ -1655,7 +1798,7 @@ window.loadMySummary = async function () {
             return;
         }
         const card = (icon, n, label, action, hint) => `
-            <div class="card summary-card ${action ? 'clickable' : ''}" style="padding:12px 14px; display:flex; align-items:center; gap:10px; ${action ? 'cursor:pointer;' : ''}" ${action ? `onclick="${action}" title="Clique para ver"` : ''}>
+            <div class="card summary-card ${action ? 'clickable' : ''}" style="padding:12px 14px; display:flex; align-items:center; gap:10px; ${action ? 'cursor:pointer;' : ''}; ${label === 'vencidas' && n > 0 ? 'border-color:var(--danger);' : ''}" ${action ? `onclick="${action}" title="Clique para ver"` : ''}>
                 <span style="font-size:1.4rem;">${icon}</span>
                 <span><strong style="font-size:1.2rem;">${n}</strong><br><small class="text-muted">${label}</small>${hint ? `<br><small style="color:var(--accent); font-weight:600;">${hint} →</small>` : ''}</span>
             </div>`;
@@ -1779,6 +1922,15 @@ window.onTarefasStatus = function (value) {
     const allowed = ['all', 'todo', 'in_progress', 'done'];
     window.tasksPagination.status = allowed.includes(value) ? value : 'all';
     window.loadTarefas(true);
+};
+
+// Baixa as tarefas exatamente como filtradas na tela (busca/status/ordem).
+window.exportTasks = function () {
+    const searchEl = document.getElementById('searchTarefas');
+    const search = searchEl ? searchEl.value : '';
+    const status = (window.tasksPagination && window.tasksPagination.status) || 'all';
+    const order = (window.tasksPagination && window.tasksPagination.order) || 'recent';
+    window.open(`api/reports.php?action=export&type=tasks&format=xls&search=${encodeURIComponent(search)}&status=${status}&order=${order}`, '_blank');
 };
 
 window.filterTarefas = function() {
@@ -2651,7 +2803,7 @@ window.renderRankingBar = function (name, total, percent, index, color) {
     const safeTotal = escapeHtml(String(total ?? 0));
     return `<div style="margin-bottom: 12px;">
         <div style="display:flex; justify-content:space-between; font-size: 0.9rem; margin-bottom: 4px;">
-            <span><strong>#${index + 1}</strong> ${safeName}</span>
+            <span><strong>${index === 0 ? '🥇' : '#' + (index+1)}</strong> ${safeName}</span>
             <span><strong>${pct}%</strong> <span class="text-muted">(${safeTotal})</span></span>
         </div>
         <div style="background: var(--border); height: 8px; border-radius: 4px; overflow: hidden;">
@@ -2681,7 +2833,11 @@ window.exportChecked = function () {
         if (typeof showToast === 'function') showToast('Marque ao menos uma opção para exportar.', 'error');
         return;
     }
-    window.exportCsv(picked.join(','), 'xls');
+    const searchEl = document.getElementById('searchTarefas');
+    const search = searchEl ? searchEl.value : '';
+    const status = (window.tasksPagination && window.tasksPagination.status) || 'all';
+    const order = (window.tasksPagination && window.tasksPagination.order) || 'recent';
+    window.open(`api/reports.php?action=export&type=${picked.join(',')}&format=xls&search=${encodeURIComponent(search)}&status=${status}&order=${order}`, '_blank');
 };
 
 window.openRankingModal = function (title, items, color) {
